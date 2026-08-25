@@ -21,27 +21,33 @@
 //  simply lower.
 // ---------------------------------------------------------------------------
 
+import { isMobileDevice } from "./quality.js";
+
 export class OceanPresentation {
   constructor(engine, canvas) {
     this.engine = engine;
     this.canvas = canvas;
 
-    this.devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    this.devicePixelRatio = Math.min(window.devicePixelRatio || 1, isMobileDevice() ? 1.5 : 2);
     this.renderScale = 1.0;
-    this.minRenderScale = 0.62;
+    this.minRenderScale = isMobileDevice() ? 0.5 : 0.62;
     this.maxRenderScale = 2.0;
     // Off by default and switched on explicitly.  A resolution that changes
     // under a measurement makes every image comparison non-reproducible, and
-    // this project's verification is image based.
+    // this project's verification is image based.  Mobile play turns it on
+    // in main.js after boot.
     this.dynamicResolution = false;
     this.targetFrameRate = 60;
     this.resolutionAdaptationSpeed = 1.0;
     /** cap on the rendered pixel count, so 4K stays a target and not a hang */
-    this.maxPixels = 3840 * 2160;
+    this.maxPixels = isMobileDevice() ? 1920 * 1080 : 3840 * 2160;
 
     this._ema = 16.7;
     this._acc = 0;
     this._settle = 0;
+    this._pollMs = isMobileDevice() ? 500 : 350;
+    this._over = isMobileDevice() ? 1.18 : 1.12;
+    this._under = isMobileDevice() ? 0.75 : 0.82;
     this.applied = { width: 0, height: 0, scale: 1 };
   }
 
@@ -114,7 +120,7 @@ export class OceanPresentation {
     if (!this.dynamicResolution) return;
     this._ema += (Math.min(dtMs, 200) - this._ema) * 0.08;
     this._acc += dtMs;
-    if (this._acc < 350) return;
+    if (this._acc < this._pollMs) return;
     this._acc = 0;
 
     const target = this.targetFrameTime;
@@ -122,10 +128,10 @@ export class OceanPresentation {
     const step = 0.045 * this.resolutionAdaptationSpeed;
     let s = this.renderScale;
 
-    if (over > 1.12) {
+    if (over > this._over) {
       this._settle = Math.max(-3, this._settle - 1);
       if (this._settle <= -2) s -= step * Math.min(2.0, over - 1.0);
-    } else if (over < 0.82) {
+    } else if (over < this._under) {
       this._settle = Math.min(3, this._settle + 1);
       // climb back slowly: a scale that ramps up the instant the frame is
       // cheap will drop again on the next wave and pump forever

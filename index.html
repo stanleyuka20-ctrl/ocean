@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
 <title>Abyssal &mdash; Photorealistic Ocean (Babylon.js / WebGPU)</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23071018'/%3E%3Cpath d='M0 20q8-6 16 0t16 0v12H0z' fill='%235fd0ff'/%3E%3C/svg%3E" />
 <link rel="stylesheet" href="styles.css" />
@@ -25,6 +27,7 @@
     <div class="hud-row dim" id="hudBackend">&mdash;</div>
     <div class="hud-row dim" id="hudState">&mdash;</div>
     <div class="hud-row dim" id="hudPos">&mdash;</div>
+    <div class="hud-row dim" id="hudPerf">&mdash;</div>
   </div>
   <div id="hudHint" class="dim">
     click to capture mouse &middot; <b>H</b> panel &middot; <b>C</b> views &middot; <b>?</b> help
@@ -49,11 +52,31 @@
     <tr><td>G</td><td>cycle debug channel</td></tr>
     <tr><td>H</td><td>toggle settings panel</td></tr>
     <tr><td>P</td><td>pause wave time</td></tr>
+    <tr><td>Left stick</td><td>fly (phone)</td></tr>
+    <tr><td>Right drag</td><td>look around (phone)</td></tr>
+    <tr><td>Rise / Down</td><td>Space / Ctrl</td></tr>
+    <tr><td>Sprint</td><td>Shift boost</td></tr>
+    <tr><td>Dive / View / Menu</td><td>U / C / H</td></tr>
   </table>
   <p class="dim">press <b>?</b> or <b>Esc</b> to close</p>
 </div>
 
 <div id="panel" class="hidden"></div>
+
+<div id="touch" class="hidden" aria-hidden="true">
+  <div id="touchJoy" aria-label="Move">
+    <div id="touchKnob"></div>
+  </div>
+  <div id="touchBtns">
+    <button type="button" class="touch-btn hold" data-act="rise">Rise</button>
+    <button type="button" class="touch-btn hold" data-act="sprint">Sprint</button>
+    <button type="button" class="touch-btn hold" data-act="down">Down</button>
+    <button type="button" class="touch-btn" data-act="dive">Dive</button>
+    <button type="button" class="touch-btn" data-act="view">View</button>
+    <button type="button" class="touch-btn" data-act="panel">Menu</button>
+  </div>
+  <div id="rotateHint" class="hidden">Turn the phone sideways</div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/babylonjs@9.22.1/babylon.js"></script>
 <script type="module" src="./src/main.js"></script>

@@ -7,7 +7,7 @@
 //  keep in sync.
 // ---------------------------------------------------------------------------
 
-import { TIERS, TIER_ORDER, autoTier } from "./core/quality.js";
+import { TIERS, TIER_ORDER, autoTier, isMobileDevice } from "./core/quality.js";
 import { Sky } from "./core/Sky.js";
 import { OceanSystem } from "./ocean/OceanSystem.js";
 import { OceanPresentation } from "./core/Presentation.js";
@@ -15,6 +15,7 @@ import { OceanExport } from "./export/OceanExport.js";
 import { TemporalAA, TAA_MODE } from "./core/TemporalAA.js";
 import { CameraController, CAMERA_PRESETS } from "./ui/CameraController.js";
 import { DebugPanel } from "./ui/DebugPanel.js";
+import { TouchControls } from "./ui/TouchControls.js";
 import { WEATHER_PRESETS, SEA_STATES } from "./ocean/WeatherOceanController.js";
 
 const BJ = () => window.BABYLON;
@@ -36,6 +37,8 @@ class App {
     this._resTimer = 0;
     this._hudTimer = 0;
     this.timeLerp = null;
+    this._loopOn = false;
+    this.showHud = true;
   }
 
   async init() {
@@ -80,8 +83,13 @@ class App {
     this.present.renderScale = 1 / Math.max(tier.hardwareScale, 0.05)
                              / this.present.devicePixelRatio;
     this.present.maxRenderScale = Math.max(2.0, this.present.renderScale);
-    this.present.dynamicResolution = false;   // opt in via __dynamicResolution(true)
+    this.present.dynamicResolution = false;   // desktop default; mobile / ?dynres=1 opt in below
     this.present.targetFrameRate = tier.targetFrameRate || 60;
+    const lockres = params.get("lockres") === "1";
+    const dynParam = params.get("dynres");
+    if (dynParam === "1") this.present.dynamicResolution = true;
+    else if (dynParam === "0" || lockres) this.present.dynamicResolution = false;
+    else if (isMobileDevice()) this.present.dynamicResolution = true;
     this.present.apply();
     this.present.applyNow();
     window.__present = this.present;
@@ -141,6 +149,15 @@ class App {
     this.panel = new DebugPanel(document.getElementById("panel"), this);
     this.panel.build();
 
+    this.touch = new TouchControls(this);
+    const onAct = (act) => {
+      if (act === "dive") this._diveToggle();
+      if (act === "view") { this.camera.cyclePreset(this._hooks()); this.panel.refresh(); }
+      if (act === "panel") this.panel.toggle();
+    };
+    this.touch.onAction(onAct);
+    this.camera.onPadAction = onAct;
+
     this.ocean.weather.applyPreset("clearAtlantic", { instant: true });
     this.ocean.setWaterType(WEATHER_PRESETS.clearAtlantic.water, true);
     this.camera.mode = "free";
@@ -148,17 +165,14 @@ class App {
 
     this._bindKeys();
     window.addEventListener("resize", () => engine.resize());
+    document.addEventListener("visibilitychange", () => this._syncLoop());
 
     progress(0.95, "compiling shaders...");
     // let the first frames build every effect before we show anything
     let warm = 0;
     // A resize destroys the swapchain texture, so skip the frame that does it:
     // WebGPU rejects a submit that touches a texture destroyed mid-frame.
-    engine.runRenderLoop(() => {
-      if (this.paused) return;
-      if (this.present.applyNow()) return;
-      this._frame();
-    });
+    this._startLoop();
     await new Promise((res) => {
       const t = setInterval(() => {
         warm++;
@@ -167,12 +181,14 @@ class App {
       }, 60);
     });
 
-    document.getElementById("hud").classList.remove("hidden");
+    this.showHud = params.get("perf") !== "0";
+    if (this.showHud) document.getElementById("hud").classList.remove("hidden");
     document.getElementById("hudBackend").textContent =
       `${engine.isWebGPU ? "WebGPU" : "WebGL2"} · ${tier.label}`;
     boot.classList.add("gone");
     setTimeout(() => boot.remove(), 900);
     window.__booted = true;
+    this._syncLoop();
   }
 
   _buildPipeline(tier) {
@@ -267,6 +283,9 @@ class App {
     const o = this.ocean;
     o.setQuality(name);
     this.tierName = name;
+    if (this.present) {
+      this.present.targetFrameRate = TIERS[name].targetFrameRate || 60;
+    }
     o.setSceneObjects({
       reflect: [], refract: [],
     });
@@ -389,6 +408,30 @@ class App {
   /** frames actually RENDERED; __advance counts against this, not iterations */
   frames = 0;
 
+  _tick() {
+    if (this.paused) return;
+    if (this.present.applyNow()) return;
+    this._frame();
+  }
+
+  _startLoop() {
+    if (this._loopOn) return;
+    this._loopOn = true;
+    this.engine.runRenderLoop(() => this._tick());
+  }
+
+  _stopLoop() {
+    if (!this._loopOn) return;
+    this._loopOn = false;
+    this.engine.stopRenderLoop();
+  }
+
+  _syncLoop() {
+    const want = !this.paused && !(document.hidden && window.__booted);
+    if (want) this._startLoop();
+    else this._stopLoop();
+  }
+
   invalidateReady() { this._quiet = 0; window.__ready = false; }
 
   /**
@@ -443,6 +486,14 @@ class App {
     document.getElementById("hudPos").textContent =
       `x ${c.x.toFixed(0)}  y ${c.y.toFixed(1)}  z ${c.z.toFixed(0)}  ·  ` +
       `depth ${sub.toFixed(0)} m  floor ${floor.toFixed(0)} m`;
+    const perf = document.getElementById("hudPerf");
+    if (perf && this.present) {
+      const st = this.present.stats();
+      perf.textContent = `${st.output} · ×${st.renderScale} · dpr ${st.devicePixelRatio}`
+        + (st.dynamicResolution ? " · dynres" : "");
+    }
+    const hud = document.getElementById("hud");
+    if (hud) hud.classList.toggle("hidden", !this.showHud);
     if (this.panel.visible) this.panel.refresh();
   }
 }
@@ -874,8 +925,8 @@ function exposeApi(app) {
          + "colour frame. Use the page screenshot; call __frameId() for identity.",
   });
 
-  window.__pauseRender = () => { app.paused = true; };
-  window.__resumeRender = () => { app.paused = false; };
+  window.__pauseRender = () => { app.paused = true; app._syncLoop(); };
+  window.__resumeRender = () => { app.paused = false; app._syncLoop(); };
   window.__advance = (n) => {
     const k = Math.max(1, n || 1);
     // Counted by the app's own frame counter, not by loop iterations.

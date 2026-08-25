@@ -254,7 +254,12 @@ export class DebugPanel {
         () => o.refraction.quality, (v) => o.refraction.setQuality(v));
       this._slider(g, "Render scale", 0.5, 2.0, 0.05, () => 1 / app.engine.getHardwareScalingLevel(),
         (v) => { app.present.renderScale = v; app.present.apply(); });
-      this._check(g, "Dynamic resolution", () => app.dynamicRes, (v) => { app.dynamicRes = v; });
+      this._check(g, "Drop reflections if slow", () => app.dynamicRes, (v) => { app.dynamicRes = v; });
+      this._check(g, "FPS overlay", () => app.showHud, (v) => {
+        app.showHud = v;
+        const hud = document.getElementById("hud");
+        if (hud) hud.classList.toggle("hidden", !v);
+      });
       this._check(g, "Bloom", () => app.pipeline && app.pipeline.bloomEnabled,
         (v) => { if (app.pipeline) app.pipeline.bloomEnabled = v; });
       this._check(g, "FXAA", () => app.pipeline && app.pipeline.fxaaEnabled,
@@ -411,7 +416,7 @@ export class DebugPanel {
       this._buttons(g, CAMERA_PRESETS.map((p, i) => ({
         key: p.key, label: p.label, action: () => app.applyCameraPreset(i),
       })), () => CAMERA_PRESETS[app.camera.presetIndex].key);
-      this._note(g, "Click the canvas to capture the mouse. WASD to move, Shift to boost.");
+      this._note(g, "Phone: left stick to fly, right side to look. Rise/Down/Sprint hold; Dive/View/Menu tap. Keyboard and mouse hide the overlay.");
     }
   }
 

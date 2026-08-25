@@ -76,6 +76,7 @@ export class OceanLODManager {
     mesh.isPickable = false;
     mesh.doNotSyncBoundingInfo = true;
     mesh.receiveShadows = false;
+    mesh.freezeWorldMatrix();
 
     this.mesh = mesh;
     this.stats.vertices = positions.length / 3;

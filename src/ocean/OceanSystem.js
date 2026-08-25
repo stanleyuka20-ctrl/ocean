@@ -44,6 +44,9 @@ export class OceanSystem {
     this.mesh = null;
     this.time = 0;
     this.clarity = 1.0;      // >1 clearer water, <1 murkier
+    const BJ = B();
+    this._depthRect = new BJ.Vector4();
+    this._waterTint = new BJ.Vector3();
   }
 
   // -------------------------------------------------------------------------
@@ -251,7 +254,6 @@ export class OceanSystem {
     // the ocean's own droplet / mist / bubble fields
     if (this.effects) {
       const water = this.water;
-      const V3 = B().Vector3;
       const ws2 = this.sim.params.windSpeed;
       this.effects.update(d, {
         time: this.sim.time, camera: this.camera, sky: this.sky,
@@ -260,7 +262,7 @@ export class OceanSystem {
         wind: [wv[0] * ws2 * 0.35, 0, wv[1] * ws2 * 0.35],
         current: [wv[0] * ws2 * 0.03, 0, wv[1] * ws2 * 0.03],
         turbulence: this.weather.storm + Math.min(1, ws2 / 22),
-        waterTint: new V3(water.scatterCol[0] * 12, water.scatterCol[1] * 12,
+        waterTint: this._waterTint.set(water.scatterCol[0] * 12, water.scatterCol[1] * 12,
                           water.scatterCol[2] * 12),
         underwaterAmbient: 0.10 + 0.9 * Math.max(0, this.sky.sunDir.y) * this.sky.sunI,
       });
@@ -293,7 +295,7 @@ export class OceanSystem {
     const sl = this.shoreline;
     m.setTexture("uDepthMap", sl ? sl.texture : this.sim.displacement[0]);
     const r = sl ? sl.rect : [0, 0, 1, 0];
-    m.setVector4("uDepthMapRect", new (B().Vector4)(r[0], r[1], r[2], r[3]));
+    m.setVector4("uDepthMapRect", this._depthRect.set(r[0], r[1], r[2], r[3]));
     m.setFloat("uDepthMapSize", sl ? sl.size : 1);
     m.setFloat("uHasDepthMap", sl ? 1 : 0);
     m.setFloat("uMirrorOn", this.reflection.texture ? 1 : 0);

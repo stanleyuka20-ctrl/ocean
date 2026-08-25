@@ -4,6 +4,8 @@
 // ---------------------------------------------------------------------------
 
 
+import { isMobileDevice } from "../core/quality.js";
+
 const B = () => window.BABYLON;
 const D = Math.PI / 180;
 
@@ -50,11 +52,43 @@ export class CameraController {
     cam.speed = 0;                       // movement is handled here
     cam.keysUp = []; cam.keysDown = []; cam.keysLeft = []; cam.keysRight = [];
     cam.attachControl(canvas, true);
+    if (cam.inputs) {
+      // The overlay owns touch look/move; leaving Babylon's touch input on
+      // would double-rotate.  Desktop keeps mouse.  Gamepad is polled here
+      // so it can share the same analog stick + dt look path as the overlay.
+      if (isMobileDevice() && cam.inputs.attached.touch) {
+        cam.inputs.remove(cam.inputs.attached.touch);
+      }
+      if (cam.inputs.attached.gamepad) cam.inputs.remove(cam.inputs.attached.gamepad);
+    }
     cam.rotation.set(2 * D, 30 * D, 0);
     this.camera = cam;
     scene.activeCamera = cam;
 
+    this.touchStickX = 0;
+    this.touchStickY = 0;
+    this.touchLookX = 0;
+    this.touchLookY = 0;
+    this.riseHold = false;
+    this.downHold = false;
+    this.sprintHold = false;
+    this.lookSens = 0.00215;
+    this.padLook = 2.15;
+    this._padX = 0;
+    this._padY = 0;
+    this._padLookX = 0;
+    this._padLookY = 0;
+    this._padRise = false;
+    this._padDown = false;
+    this._padSprint = false;
+    this._padWas = Object.create(null);
+    this.onPadAction = null;
+    this._move = new BJ.Vector3();
+    this._fwd = new BJ.Vector3();
+    this._right = new BJ.Vector3();
+
     canvas.addEventListener("click", () => {
+      if (document.body.classList.contains("touch-on")) return;
       if (!engine.isPointerLock) engine.enterPointerlock();
     });
     window.addEventListener("keydown", (e) => {
@@ -141,22 +175,46 @@ export class CameraController {
     let sp = this.speed * (under ? 0.55 : 1);
     sp *= 1 + Math.max(0, cam.position.y) * 0.035;
     if (under) sp *= 1 + Math.min(90, Math.max(0, this.seaLevel - cam.position.y)) * 0.045;
-    if (k.ShiftLeft || k.ShiftRight) sp *= this.boost;
+    this._pollGamepad();
+    if (k.ShiftLeft || k.ShiftRight || this.sprintHold || this._padSprint) sp *= this.boost;
 
-    const f = cam.getDirection(BJ.Axis.Z);
-    const r = cam.getDirection(BJ.Axis.X);
-    const move = new BJ.Vector3(0, 0, 0);
-    if (k.KeyW) move.addInPlace(f);
-    if (k.KeyS) move.subtractInPlace(f);
-    if (k.KeyD) move.addInPlace(r);
-    if (k.KeyA) move.subtractInPlace(r);
-    if (k.Space) move.y += 1;
-    if (k.ControlLeft || k.ControlRight) move.y -= 1;
+    const lookX = this.touchLookX;
+    const lookY = this.touchLookY;
+    this.touchLookX = 0;
+    this.touchLookY = 0;
+    if (lookX || lookY || this._padLookX || this._padLookY) {
+      cam.rotation.y += lookX * this.lookSens + this._padLookX * this.padLook * dt;
+      cam.rotation.x += lookY * this.lookSens + this._padLookY * this.padLook * dt;
+      const lim = Math.PI * 0.49;
+      if (cam.rotation.x > lim) cam.rotation.x = lim;
+      if (cam.rotation.x < -lim) cam.rotation.x = -lim;
+    }
+
+    const wm = cam.getWorldMatrix();
+    BJ.Vector3.TransformNormalToRef(BJ.Axis.Z, wm, this._fwd);
+    BJ.Vector3.TransformNormalToRef(BJ.Axis.X, wm, this._right);
+    this._fwd.normalize();
+    this._right.normalize();
+    const move = this._move;
+    move.set(0, 0, 0);
+    let sx = this.touchStickX + this._padX;
+    let sy = this.touchStickY + this._padY;
+    if (k.KeyW) sy += 1;
+    if (k.KeyS) sy -= 1;
+    if (k.KeyD) sx += 1;
+    if (k.KeyA) sx -= 1;
+    const sl = Math.hypot(sx, sy);
+    if (sl > 1) { sx /= sl; sy /= sl; }
+    move.x += this._fwd.x * sy + this._right.x * sx;
+    move.y += this._fwd.y * sy + this._right.y * sx;
+    move.z += this._fwd.z * sy + this._right.z * sx;
+    if (k.Space || this.riseHold || this._padRise) move.y += 1;
+    if (k.ControlLeft || k.ControlRight || this.downHold || this._padDown) move.y -= 1;
     if (move.lengthSquared() > 0) {
       move.normalize().scaleInPlace(sp * dt);
       cam.position.addInPlace(move);
     }
-    if (under && !k.Space && !k.ControlLeft) {
+    if (under && !k.Space && !k.ControlLeft && !this.riseHold && !this.downHold && !this._padRise && !this._padDown) {
       // Only bob in the top metre -- a constant 0.18 m/s rise surfaces a
       // dive in seconds and is why underwater views kept collapsing to
       // god-rays-in-a-void just under the waves.
@@ -172,5 +230,45 @@ export class CameraController {
       const bed = ocean.seaLevel - ocean.seafloor.depth + 0.85;
       if (cam.position.y < bed) cam.position.y = bed;
     }
+  }
+
+  _pollGamepad() {
+    this._padX = 0;
+    this._padY = 0;
+    this._padLookX = 0;
+    this._padLookY = 0;
+    this._padRise = false;
+    this._padDown = false;
+    this._padSprint = false;
+    if (typeof navigator === "undefined" || !navigator.getGamepads) return;
+    const pads = navigator.getGamepads();
+    let pad = null;
+    for (let i = 0; i < pads.length; i++) if (pads[i]) { pad = pads[i]; break; }
+    if (!pad) return;
+    const dead = (v) => {
+      const a = Math.abs(v);
+      if (a < 0.18) return 0;
+      return Math.sign(v) * (a - 0.18) / 0.82;
+    };
+    const ax = pad.axes || [];
+    this._padX = dead(ax[0] || 0);
+    this._padY = -dead(ax[1] || 0);
+    this._padLookX = dead(ax[2] || 0);
+    this._padLookY = dead(ax[3] || 0);
+    const b = pad.buttons || [];
+    this._padRise = !!(b[0] && b[0].pressed);
+    this._padDown = !!(b[1] && b[1].pressed);
+    this._padSprint = !!((b[7] && (b[7].pressed || b[7].value > 0.45))
+      || (b[10] && b[10].pressed)
+      || (b[6] && b[6].value > 0.45));
+    const edge = (i) => !!(b[i] && b[i].pressed);
+    if (this.onPadAction) {
+      if (edge(2) && !this._padWas[2]) this.onPadAction("view");
+      if (edge(3) && !this._padWas[3]) this.onPadAction("dive");
+      if (edge(9) && !this._padWas[9]) this.onPadAction("panel");
+    }
+    this._padWas[2] = edge(2);
+    this._padWas[3] = edge(3);
+    this._padWas[9] = edge(9);
   }
 }

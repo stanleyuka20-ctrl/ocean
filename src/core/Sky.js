@@ -79,6 +79,7 @@ export class Sky {
 
     this.dome = dome;
     this.material = mat;
+    this._driftV = new BJ.Vector2(0, 0);
     return dome;
   }
 
@@ -183,7 +184,9 @@ export class Sky {
     mat.setFloat("uCloudBright", this.cloudBright);
     mat.setFloat("uStorm", this.storm);
     mat.setFloat("uFlash", this.flash);
-    mat.setVector2("uCloudDrift", new (B().Vector2)(this.drift[0], this.drift[1]));
+    if (this._driftV) this._driftV.set(this.drift[0], this.drift[1]);
+    else this._driftV = new (B().Vector2)(this.drift[0], this.drift[1]);
+    mat.setVector2("uCloudDrift", this._driftV);
   }
 
   bindDome(camera) {

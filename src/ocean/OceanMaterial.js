@@ -56,6 +56,16 @@ export class OceanMaterial {
       deepDepth: 240,
       floorDepth: 0,
     };
+    const BJ = B();
+    this._camXZ = new BJ.Vector2();
+    this._cascadeL = new BJ.Vector3();
+    this._cascadeTx = new BJ.Vector3();
+    this._cascadeOn = new BJ.Vector3();
+    this._slopeVar = new BJ.Vector3();
+    this._windDir = new BJ.Vector2();
+    this._screen = new BJ.Vector2();
+    this._absorb = new BJ.Vector3();
+    this._scatter = new BJ.Vector3();
   }
 
   build() {
@@ -101,16 +111,16 @@ export class OceanMaterial {
 
     m.setFloat("logarithmicDepthConstant", 2.0 / (Math.log(camera.maxZ + 1.0) / Math.LN2));
     m.setVector3("uCamPos", camera.globalPosition);
-    m.setVector2("uCamXZ", new (B().Vector2)(camera.globalPosition.x, camera.globalPosition.z));
+    m.setVector2("uCamXZ", this._camXZ.set(camera.globalPosition.x, camera.globalPosition.z));
     m.setFloat("uTime", sim.time);
     m.setFloat("uSeaLevel", s.seaLevel);
 
     const L = sim.patchSizes, TX = sim.texelSizes;
-    m.setVector3("uCascadeL", new (B().Vector3)(L[0], L[1], L[2]));
-    m.setVector3("uCascadeTexel", new (B().Vector3)(TX[0], TX[1], TX[2]));
-    m.setVector3("uCascadeOn", new (B().Vector3)(sim.enabled[0], sim.enabled[1], sim.enabled[2]));
+    m.setVector3("uCascadeL", this._cascadeL.set(L[0], L[1], L[2]));
+    m.setVector3("uCascadeTexel", this._cascadeTx.set(TX[0], TX[1], TX[2]));
+    m.setVector3("uCascadeOn", this._cascadeOn.set(sim.enabled[0], sim.enabled[1], sim.enabled[2]));
     const sv = sim.slopeVariance;
-    m.setVector3("uSlopeVar", new (B().Vector3)(sv[0], sv[1], sv[2]));
+    m.setVector3("uSlopeVar", this._slopeVar.set(sv[0], sv[1], sv[2]));
 
     const d = sim.displacement, dr = sim.derivatives;
     m.setTexture("uDisp0", d[0]); m.setTexture("uDisp1", d[1]); m.setTexture("uDisp2", d[2]);
@@ -133,21 +143,20 @@ export class OceanMaterial {
     m.setFloat("uWhitewater", sf.whitewater);
     m.setFloat("uSprayLight", sf.sprayLight);
     const wv = sim.windVector();
-    m.setVector2("uWindDir", new (B().Vector2)(wv[0], wv[1]));
+    m.setVector2("uWindDir", this._windDir.set(wv[0], wv[1]));
     m.setFloat("uWindSpeed", sim.params.windSpeed);
 
     sky.bindTo(m);
 
-    m.setVector2("uScreen", new (B().Vector2)(engine.getRenderWidth(), engine.getRenderHeight()));
+    m.setVector2("uScreen", this._screen.set(engine.getRenderWidth(), engine.getRenderHeight()));
     // UV per metre, at one metre of distance, along the vertical axis.  The
     // screen-space refraction/reflection offsets are a WORLD length and have
     // to be converted with the real projection -- see the note in the shader.
     const cam = ctx.camera;
     const fovY = cam && cam.fov ? cam.fov : 0.9;
     m.setFloat("uProjScale", 0.5 / Math.tan(fovY * 0.5));
-    const V3 = B().Vector3;
-    m.setVector3("uAbsorb", new V3(water.absorb[0], water.absorb[1], water.absorb[2]));
-    m.setVector3("uScatterCol", new V3(water.scatterCol[0], water.scatterCol[1], water.scatterCol[2]));
+    m.setVector3("uAbsorb", this._absorb.set(water.absorb[0], water.absorb[1], water.absorb[2]));
+    m.setVector3("uScatterCol", this._scatter.set(water.scatterCol[0], water.scatterCol[1], water.scatterCol[2]));
     m.setFloat("uScatterAmt", water.scatterAmt);
     m.setFloat("uTurbid", water.turbid);
 

@@ -127,6 +127,18 @@ export const TIERS = {
 };
 
 export const TIER_ORDER = ["low", "medium", "high", "ultra", "cinematic"];
+export const MOBILE_TIERS = ["low", "medium", "high", "ultra"];
+
+export function isMobileDevice() {
+  if (typeof window === "undefined") return false;
+  const params = new URLSearchParams(location.search);
+  if (params.get("mobile") === "1") return true;
+  if (params.get("mobile") === "0") return false;
+  const coarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+  const touch = (navigator.maxTouchPoints || 0) > 0;
+  const small = Math.min(screen.width, screen.height) <= 920;
+  return !!(coarse || (touch && small));
+}
 
 /** Pick a starting tier from what the machine actually reports. */
 export function autoTier(engine) {
@@ -142,6 +154,17 @@ export function autoTier(engine) {
   const r = renderer.toLowerCase();
   const soft = /swiftshader|llvmpipe|software|basic render/.test(r);
   if (soft) return "low";
+
+  if (isMobileDevice()) {
+    const cores = navigator.hardwareConcurrency || 4;
+    const mem = navigator.deviceMemory || 4;
+    const strongPhone = /adreno (7|8)|mali-g7|mali-g9|immortalis|apple gpu|a1[4-9]|a[2-9][0-9]/.test(r);
+    if (webgpu && strongPhone && cores >= 8 && mem >= 6) return "ultra";
+    if (webgpu && strongPhone && cores >= 6 && mem >= 4) return "high";
+    if (webgpu || (cores >= 6 && mem >= 4)) return "medium";
+    return "low";
+  }
+
   const strong = /rtx|radeon rx|rx 6|rx 7|rx 9|arc a|apple m[1-9]|geforce (gtx 1[06-9]|rtx)/.test(r);
   const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1;
   if (webgpu && strong) return "cinematic";

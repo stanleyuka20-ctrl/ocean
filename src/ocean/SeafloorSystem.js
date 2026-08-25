@@ -66,6 +66,11 @@ export class SeafloorSystem {
 
     this.mesh = mesh;
     this.material = mat;
+    this._base = new BJ.Vector3(0.28, 0.24, 0.18);
+    this._absorb = new BJ.Vector3();
+    this._scatter = new BJ.Vector3();
+    this._cascadeL = new BJ.Vector3();
+    this._footRect = new BJ.Vector4(0, 0, 1, 0);
     return this;
   }
 
@@ -86,8 +91,6 @@ export class SeafloorSystem {
     this.mesh.position.y = 0;
 
     const m = this.material;
-    const BJ = B();
-    const V3 = BJ.Vector3;
     const w = o.water;
     m.setFloat("logarithmicDepthConstant",
       2.0 / (Math.log(o.camera.maxZ + 1.0) / Math.LN2));
@@ -100,9 +103,9 @@ export class SeafloorSystem {
     m.setFloat("uKind", 0);
     m.setFloat("uRough", 0.82);
     m.setFloat("uMetal", 0);
-    m.setVector3("uBaseColor", new V3(0.28, 0.24, 0.18));
-    m.setVector3("uAbsorb", new V3(w.absorb[0], w.absorb[1], w.absorb[2]));
-    m.setVector3("uScatterCol", new V3(w.scatterCol[0], w.scatterCol[1], w.scatterCol[2]));
+    m.setVector3("uBaseColor", this._base);
+    m.setVector3("uAbsorb", this._absorb.set(w.absorb[0], w.absorb[1], w.absorb[2]));
+    m.setVector3("uScatterCol", this._scatter.set(w.scatterCol[0], w.scatterCol[1], w.scatterCol[2]));
     m.setFloat("uScatterAmt", w.scatterAmt);
     m.setFloat("uTurbid", w.turbid);
     m.setFloat("uWetness", 0);
@@ -110,9 +113,9 @@ export class SeafloorSystem {
     m.setFloat("uWetTop", -1000);
     m.setFloat("uWetAmt", 0);
     m.setFloat("uWetSoak", 0);
-    m.setVector4("uFootRect", new BJ.Vector4(0, 0, 1, 0));
+    m.setVector4("uFootRect", this._footRect);
     const L = o.sim.patchSizes;
-    m.setVector3("uCascadeL", new V3(L[0], L[1], L[2]));
+    m.setVector3("uCascadeL", this._cascadeL.set(L[0], L[1], L[2]));
     m.setFloat("uWaveScale", o.sim.params.waveScale);
     m.setFloat("uTime", o.sim.time);
     m.setFloat("uClipMode", 0);
