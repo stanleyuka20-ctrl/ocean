@@ -47,10 +47,10 @@ show up without a hard refresh.
 
 ### GitHub Pages
 
-This repo is meant to be served as a static site from the `main` branch root
-(`index.html`). After Pages is enabled the public URL is:
+This repo is served as a static site from the `main` branch root
+(`index.html`). Public URL:
 
-`https://<github-user>.github.io/<repo>/`
+https://stanleyuka20-ctrl.github.io/ocean/
 
 Open that link in Chrome/Edge. The first load compiles the ocean shaders and
 can take several seconds (the in-page boot bar tracks this).
