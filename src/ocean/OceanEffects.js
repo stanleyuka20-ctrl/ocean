@@ -35,8 +35,9 @@ export class OceanEffects {
       minPixel: 1.2, opacity: 0.15,   // a veil: the water behind it dominates
     }).build(renderer);
     this.bubbles = new GpuParticleField(this.engine, this.scene, {
-      kind: "bubble", count: Math.round(16384 * q) + 1024,
-      reactiveBase: 0.45, jumpLimit: 2.5, minPixel: 0.85, opacity: 0.62,
+      kind: "bubble", count: Math.round(480 * q) + 64,
+      reactiveBase: 0.45, jumpLimit: 2.5, minPixel: 0, opacity: 0.72,
+      stretch: 0,
     }).build(renderer);
     // Suspended matter.  Owned here rather than by a Babylon particle system
     // so its previous position is readable and it can carry a motion vector.
@@ -54,7 +55,10 @@ export class OceanEffects {
   update(dt, ctx) {
     if (!this.fields) return;
     for (const f of this.fields) {
-      f.enabled = this.enabled;
+      if (!this.enabled) {
+        if (f.mesh) f.mesh.setEnabled(false);
+        continue;
+      }
       f.update(dt, ctx);
     }
   }

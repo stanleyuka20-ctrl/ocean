@@ -96,37 +96,45 @@ export class UnderwaterSystem {
     const on = this.enabled && this.blend > 0.08 && this.bubbleAmount > 0.001;
     if (!on) return;
     this._bubAcc = (this._bubAcc || 0) + dt;
-    if (this._bubAcc < 0.065) return;
+    if (this._bubAcc < 0.11) return;
     const step = this._bubAcc; this._bubAcc = 0;
     const c = this.camera.globalPosition;
     const q = this.bubbleAmount * (this.depthFade === undefined ? 1 : this.depthFade);
     const floorY = this.seaLevel - ((ocean.seafloor && ocean.seafloor.enabled) ? ocean.seafloor.depth : 12);
-    const y = Math.min(c.y - 1.6, this.seaLevel - 2.4);
-    const n = Math.round(step * 420 * q);
+    const BJ = B();
+    const fwd = this.camera.getDirection(BJ.Axis.Z);
+    const rt = this.camera.getDirection(BJ.Axis.X);
+    const y = Math.min(c.y - 1.8, this.seaLevel - 2.6);
+    const n = Math.round(step * 10 * q);
     if (n > 0) {
       f.emit({
         position: [c.x, y, c.z],
-        radius: 6.2,
-        velocity: [0, 0.38, 0], spread: 1.15,
-        count: n, size: [0.004, 0.016],
-        life: [1.8, 5.2], jitter: 0.9,
+        radius: 7.5,
+        velocity: [0, 0.38, 0], spread: 0.45,
+        count: n, size: [0.04, 0.11],
+        life: [3.5, 8.0], jitter: 0.4,
       });
     }
+    const side = ((this._bubFlip = !(this._bubFlip)) ? 1 : -1) * (1.1 + step * 2.0);
     f.emit({
-      position: [c.x, Math.min(c.y - 0.55, this.seaLevel - 1.1), c.z],
-      radius: 2.1,
-      velocity: [0, 0.26, 0], spread: 0.75,
-      count: Math.max(2, Math.round(step * 70 * q)),
-      size: [0.016, 0.062],
-      life: [1.5, 3.8], jitter: 0.65,
+      position: [
+        c.x + fwd.x * 2.8 + rt.x * side,
+        Math.min(c.y - 0.4, this.seaLevel - 1.2),
+        c.z + fwd.z * 2.8 + rt.z * side,
+      ],
+      radius: 0.55,
+      velocity: [0, 0.24, 0], spread: 0.12,
+      count: Math.max(1, Math.round(step * 2.2 * q)),
+      size: [0.09, 0.20],
+      life: [2.8, 5.8], jitter: 0.15,
     });
     f.emit({
-      position: [c.x, floorY + 0.35, c.z],
-      radius: 7.5,
-      velocity: [0, 0.18, 0], spread: 0.55,
-      count: Math.max(2, Math.round(step * 90 * q)),
-      size: [0.006, 0.022],
-      life: [2.4, 6.5], jitter: 0.8,
+      position: [c.x, floorY + 0.45, c.z],
+      radius: 8.0,
+      velocity: [0, 0.20, 0], spread: 0.35,
+      count: Math.max(1, Math.round(step * 6 * q)),
+      size: [0.045, 0.13],
+      life: [4.5, 9.5], jitter: 0.32,
     });
   }
 
@@ -143,6 +151,10 @@ export class UnderwaterSystem {
     this.droplets = Math.max(0, this.droplets - dt * 0.42);
 
     if (!this.pp) return;
+    const needPost = this.enabled && (this.blend > 0.008 || this.droplets > 0.008);
+    if (typeof this.pp.enabled === "boolean") this.pp.enabled = needPost;
+    else if (this.pp.setEnabled) this.pp.setEnabled(needPost);
+    if (!needPost) return;
     const BJ = B();
     const self = this;
     this.pp.onApply = (effect) => {

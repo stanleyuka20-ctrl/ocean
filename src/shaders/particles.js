@@ -112,7 +112,10 @@ void main(){
                            + bitan * (r2.y - 0.5) * s1.w)
              * sp * (1.0 - s3.x * 0.5 + s3.x * r2.z);
 
-    float sz = mix(s2.x, s2.y, r1.x * r1.x);   // biased small: most drops are tiny
+    // Spray is biased tiny.  Bubbles keep the full size range so the
+    // underwater field reads as rising glass, not dust.
+    float szPick = (uKind > 0.5 && uKind < 1.5) ? r1.x : r1.x * r1.x;
+    float sz = mix(s2.x, s2.y, szPick);
     float life = mix(s2.z, s2.w, r2.z);
     spawnPos = vec4(p, life);
     spawnVel = vec4(v, sz);
@@ -159,8 +162,8 @@ void main(){
       float w = uTime * (2.4 + phash(idx) * 3.0) + idx;
       v += vec3(sin(w), 0.0, cos(w * 1.31)) * (0.05 + size * 6.0)
            * (0.4 + uTurbulence) * uDt;
-      size += uDt * (0.006 + size * 0.045);
-      size = min(size, 0.14);
+      size += uDt * (0.004 + size * 0.028);
+      size = min(size, 0.36);
     }
   }
 
@@ -390,6 +393,193 @@ void main(){
   float edge = 1.0 - smoothstep(0.72, 0.98, r2);
   float alpha = (0.12 + 0.82 * F + 0.62 * rimHi) * fade * edge;
   gl_FragColor = vec4(max(col, 0.0), clamp(alpha, 0.0, 0.88));
+}
+`;
+
+// ---------------------------------------------------------------------------
+//  RENDER -- 3D bubble spheres (air in water)
+//
+//  Billboard rings read as a particle effect: they stretch with velocity,
+//  have no silhouette in depth, and grow under the screen-space size floor.
+//  These are real unit spheres instanced per GPU particle.  A ray-ellipsoid
+//  in the fragment shader gives a smooth silhouette (the hull is only a
+//  bounding mesh) and the shading is a water-to-air interface: Snell's-window
+//  interior, Fresnel silver, TIR rim, sun spec.  The CGTrader pack this
+//  replaces is a textured rising mesh behind a login wall.  The motion is
+//  the same -- streams lifting off the bed -- the shading is the physical
+//  model that pack's texture fakes.
+// ---------------------------------------------------------------------------
+export const BUBBLE_MESH_VERT = /* glsl */ `
+precision highp float;
+attribute vec3 position;
+attribute vec2 uv;
+uniform mat4 viewProjection;
+uniform vec3 uCamPos;
+uniform sampler2D uPos;
+uniform sampler2D uVel;
+uniform float uWidth;
+uniform float uHeight;
+uniform float uSizeScale;
+uniform float uTime;
+#include<logDepthDeclaration>
+
+varying vec3 vWorld;
+varying vec3 vCenter;
+varying vec3 vRadii;
+varying float vLife;
+varying float vSeed;
+varying float vAlive;
+
+void main(){
+  float idx = uv.x;
+  vec2 st = vec2(mod(idx, uWidth) + 0.5, floor(idx / uWidth) + 0.5) / vec2(uWidth, uHeight);
+  vec4 A = textureLod(uPos, st, 0.0);
+  vec4 B = textureLod(uVel, st, 0.0);
+  vLife = A.w;
+  vSeed = fract(idx * 0.6180339);
+  float alive = (A.w > 1e-6 && B.w * uSizeScale > 1e-6) ? 1.0 : 0.0;
+  vAlive = alive;
+  float size = B.w * uSizeScale;
+  float wob = 0.055 * sin(uTime * (2.4 + vSeed * 1.8) + vSeed * 6.28318);
+  vec3 sc = vec3(1.0 + wob, 1.0 - wob * 0.32, 1.0 - wob * 0.55);
+  vRadii = sc * size;
+  vCenter = A.xyz;
+  vec3 hull = position * vRadii * 1.20;
+  vec3 wp = A.xyz + hull;
+  vWorld = wp;
+  vec4 clip = viewProjection * vec4(wp, 1.0);
+  gl_Position = mix(vec4(2.0, 2.0, 2.0, 1.0), clip, alive);
+#include<logDepthVertex>
+}
+`;
+
+export const BUBBLE_MESH_FRAG = /* glsl */ `
+precision highp float;
+#include<logDepthDeclaration>
+uniform vec3  uSunDir;
+uniform vec3  uSunColor;
+uniform float uSunI;
+uniform vec3  uCamPos;
+uniform vec3  uWaterTint;
+uniform float uAmbient;
+
+varying vec3 vWorld;
+varying vec3 vCenter;
+varying vec3 vRadii;
+varying float vLife;
+varying float vSeed;
+varying float vAlive;
+
+void main(){
+#include<logDepthFragment>
+  vec3 rd = vWorld - uCamPos;
+  float rdL = length(rd);
+  rd *= 1.0 / max(rdL, 1e-6);
+
+  vec3 radii = max(vRadii, vec3(1e-5));
+  vec3 o = (uCamPos - vCenter) / radii;
+  vec3 d = rd / radii;
+  float qa = dot(d, d);
+  float qb = 2.0 * dot(o, d);
+  float qc = dot(o, o) - 1.0;
+  float disc = qb * qb - 4.0 * qa * qc;
+  float hit = step(0.0, disc) * vAlive * float(gl_FrontFacing);
+  float sq = sqrt(max(disc, 0.0));
+  float inv = 0.5 / max(qa, 1e-8);
+  float t0 = (-qb - sq) * inv;
+  float t1 = (-qb + sq) * inv;
+  float tNear = mix(t1, t0, step(0.0, t0));
+  hit *= step(0.0, max(t0, t1));
+
+  vec3 pHit = uCamPos + rd * tNear;
+  vec3 n = normalize((pHit - vCenter) / (radii * radii));
+  vec3 V = -rd;
+  float ndv = clamp(dot(n, V), 0.0, 1.0);
+
+  float F = 0.020 + 0.980 * pow(1.0 - ndv, 5.0);
+  float tir = smoothstep(0.52, 0.20, ndv);
+
+  vec3 T = refract(rd, n, 1.333);
+  float hasT = step(1e-4, dot(T, T));
+  float window = smoothstep(-0.12, 0.72, T.y);
+  vec3 deep = uWaterTint * (0.12 + 0.55 * uAmbient);
+  vec3 skyWin = uSunColor * uSunI * 0.42
+              + vec3(0.22, 0.48, 0.82) * (0.18 + 0.82 * uAmbient);
+  vec3 interior = mix(deep, skyWin, window) * hasT;
+  interior += deep * (1.0 - hasT) * 0.35;
+
+  vec3 silver = vec3(0.82, 0.91, 1.0);
+  vec3 col = interior * (0.70 + 0.40 * ndv);
+  col += skyWin * pow(ndv, 6.0) * 0.28 * hasT;
+  col = mix(col, silver * (0.30 + 0.70 * uSunI), F * 0.88);
+  col += silver * uSunI * tir * 0.18;
+  vec3 H = normalize(V + uSunDir);
+  col += uSunColor * uSunI * pow(max(dot(n, H), 0.0), 320.0) * 2.1;
+  col += uSunColor * uSunI * pow(max(dot(n, H), 0.0), 24.0) * 0.10;
+
+  float fade = smoothstep(0.0, 0.10, vLife) * smoothstep(0.012, 0.045, radii.x);
+  float bodyA = 0.30 + 0.22 * ndv;
+  float rimA = 0.16 + 0.70 * F + 0.32 * tir;
+  float alpha = mix(bodyA, rimA, clamp(F + tir * 0.45, 0.0, 1.0)) * fade * hit;
+  gl_FragColor = vec4(max(col, 0.0) * hit, clamp(alpha, 0.0, 0.90));
+}
+`;
+
+export const BUBBLE_MESH_VEL_VERT = /* glsl */ `
+precision highp float;
+attribute vec3 position;
+attribute vec2 uv;
+uniform mat4 uCurViewProjection;
+uniform mat4 uPrevViewProjection;
+uniform vec3 uCamPos;
+uniform sampler2D uPos;
+uniform sampler2D uPosPrev;
+uniform sampler2D uVel;
+uniform float uWidth;
+uniform float uHeight;
+uniform float uSizeScale;
+uniform float uJumpLimit;
+uniform float uTime;
+#include<logDepthDeclaration>
+
+varying vec4 vCur;
+varying vec4 vPrev;
+varying float vDisc;
+varying float vAlive;
+varying vec2 vVCorner;
+varying vec3 vWorldCur;
+varying vec3 vWorldPrev;
+varying float vBorn;
+varying float vReused;
+
+void main(){
+  float idx = uv.x;
+  vec2 st = vec2(mod(idx, uWidth) + 0.5, floor(idx / uWidth) + 0.5) / vec2(uWidth, uHeight);
+  vec4 A = textureLod(uPos, st, 0.0);
+  vec4 P = textureLod(uPosPrev, st, 0.0);
+  vec4 B = textureLod(uVel, st, 0.0);
+  float alive = (A.w > 1e-6 && B.w * uSizeScale > 1e-6) ? 1.0 : 0.0;
+  vAlive = alive;
+  float born = (P.w <= 1e-6) ? 1.0 : 0.0;
+  float lifeUp = step(P.w - 1e-5, A.w);
+  float jump = distance(A.xyz, P.xyz);
+  float reused = clamp(lifeUp + step(uJumpLimit, jump), 0.0, 1.0);
+  vDisc = clamp(born + reused, 0.0, 1.0);
+  vBorn = born; vReused = reused;
+  vWorldCur = A.xyz; vWorldPrev = P.xyz;
+  float size = B.w * uSizeScale;
+  float seed = fract(idx * 0.6180339);
+  float wob = 0.055 * sin(uTime * (2.4 + seed * 1.8) + seed * 6.28318);
+  vec3 sc = vec3(1.0 + wob, 1.0 - wob * 0.32, 1.0 - wob * 0.55);
+  vec3 hull = position * sc * size * 1.20;
+  vec3 wp = A.xyz * alive + hull * alive;
+  vec3 prevBase = mix(P.xyz, A.xyz, vDisc) * alive;
+  vec3 wpPrev = prevBase + hull * alive;
+  vVCorner = vec2(0.0);
+  vCur = uCurViewProjection * vec4(wp, 1.0);
+  vPrev = uPrevViewProjection * vec4(wpPrev, 1.0);
+  gl_Position = mix(vec4(2.0, 2.0, 2.0, 1.0), vCur, alive);
+#include<logDepthVertex>
 }
 `;
 

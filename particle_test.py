@@ -184,6 +184,16 @@ def main():
         check("motes are live under the surface", counts["motes"] > 200,
               "%d motes, %d bubbles" % (counts["motes"], counts["bubbles"]))
 
+        # 3D bubble spheres own a lot of pixels.  These checks are about motes
+        # (coverage that responds to a burst, motion on a still camera), so
+        # the bubble field has to be out of the velocity target or it drowns
+        # them.
+        page.evaluate("""() => {
+          window.__ocean.underwater.bubbleAmount = 0;
+          window.__ocean.effects.bubbles.setEnabled(false);
+        }""")
+        page.wait_for_timeout(800)
+
         only(False, True)
         page.wait_for_timeout(400)
         p_still = page.evaluate(VELSTAT)
@@ -244,6 +254,8 @@ def main():
               born["covered"] > quiet["covered"] * 2.0,
               "%d covered pixels ambient -> %d during a burst in view"
               % (quiet["covered"], born["covered"]))
+
+        page.evaluate("window.__ocean.underwater.bubbleAmount = 1")
 
         # ---- 4. spray above water ------------------------------------------
         page.evaluate("window.__setPreset('storm')")

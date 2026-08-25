@@ -204,6 +204,15 @@ export class OceanSystem {
     this.underwater.update(d, wh, this.sky, this.water);
     this.underwater._emitMotes(d, this);
     this.underwater._emitBubbles(d, this);
+    if (this.effects) {
+      const wet = this.underwater.blend > 0.04 && this.underwater.enabled;
+      if (this.effects.bubbles) {
+        this.effects.bubbles.setEnabled(wet && this.underwater.bubbleAmount > 0.001);
+      }
+      if (this.effects.motes) {
+        this.effects.motes.setEnabled(wet && this.underwater.motesAmount > 0.001);
+      }
+    }
 
     if (this.seafloor) this.seafloor.update();
     this.material.state.floorDepth = (this.seafloor && this.seafloor.enabled) ? this.seafloor.depth : 0;

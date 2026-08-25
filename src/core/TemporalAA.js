@@ -611,7 +611,8 @@ export class TemporalAA {
     // what the ocean did not cover
     if (this.skyVelocity && this.skyDome) want.push(this.skyDome);
     if (this.particleVelocity) {
-      for (const f of this.particleFields) if (f.mesh) want.push(f.mesh);
+      for (const f of this.particleFields)
+        if (f.mesh && f.mesh.isEnabled()) want.push(f.mesh);
     }
     if (list.length !== want.length || want.some((m, i) => list[i] !== m)) {
       list.length = 0;

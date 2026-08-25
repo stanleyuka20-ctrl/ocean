@@ -189,7 +189,7 @@ export class BreakingWaves {
             o.effects.bubbles.emit({
               position: [x, d.height - 0.25, z], radius: 0.9 + e * 0.6,
               velocity: [dirx * 0.8, -1.0 - e * 1.2, dirz * 0.8], spread: 1.3,
-              count: c, size: [0.002, 0.011],
+              count: c, size: [0.04, 0.12],
               life: [1.2, 3.0 + e * 1.6], jitter: 1.0,
             });
             bub += c;

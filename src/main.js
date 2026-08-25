@@ -83,13 +83,16 @@ class App {
     this.present.renderScale = 1 / Math.max(tier.hardwareScale, 0.05)
                              / this.present.devicePixelRatio;
     this.present.maxRenderScale = Math.max(2.0, this.present.renderScale);
-    this.present.dynamicResolution = false;   // desktop default; mobile / ?dynres=1 opt in below
+    this.present.dynamicResolution = false;
     this.present.targetFrameRate = tier.targetFrameRate || 60;
+    this.present.maxPixels = tier.maxPixels
+      || (isMobileDevice() ? 1920 * 1080 : 3840 * 2160);
     const lockres = params.get("lockres") === "1";
     const dynParam = params.get("dynres");
+    const wide = (this.canvas.clientWidth || 0) > 1680;
     if (dynParam === "1") this.present.dynamicResolution = true;
     else if (dynParam === "0" || lockres) this.present.dynamicResolution = false;
-    else if (isMobileDevice()) this.present.dynamicResolution = true;
+    else if (isMobileDevice() || wide) this.present.dynamicResolution = true;
     this.present.apply();
     this.present.applyNow();
     window.__present = this.present;
@@ -164,7 +167,10 @@ class App {
     this.camera.applyPreset(0, this._hooks());
 
     this._bindKeys();
-    window.addEventListener("resize", () => engine.resize());
+    window.addEventListener("resize", () => {
+      engine.resize();
+      this.present.apply();
+    });
     document.addEventListener("visibilitychange", () => this._syncLoop());
 
     progress(0.95, "compiling shaders...");
@@ -188,6 +194,11 @@ class App {
     boot.classList.add("gone");
     setTimeout(() => boot.remove(), 900);
     window.__booted = true;
+    if (!lockres && dynParam !== "0"
+        && (isMobileDevice() || this.canvas.clientWidth > 1680)) {
+      this.present.dynamicResolution = true;
+    }
+    this.present.apply();
     this._syncLoop();
   }
 
@@ -285,6 +296,8 @@ class App {
     this.tierName = name;
     if (this.present) {
       this.present.targetFrameRate = TIERS[name].targetFrameRate || 60;
+      if (TIERS[name].maxPixels) this.present.maxPixels = TIERS[name].maxPixels;
+      this.present.apply();
     }
     o.setSceneObjects({
       reflect: [], refract: [],

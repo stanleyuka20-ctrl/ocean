@@ -47,6 +47,7 @@ export const TIERS = {
     targetFrameRate: 60,
     dynamicResolution: true,
     breakerQuality: 1.0,
+    maxPixels: 3840 * 2160,
   }),
   ultra: T({
     label: "Ultra",
@@ -66,6 +67,7 @@ export const TIERS = {
     targetFrameRate: 60,
     dynamicResolution: true,
     breakerQuality: 0.8,
+    maxPixels: 2560 * 1440,
   }),
   high: T({
     label: "High",
@@ -85,6 +87,7 @@ export const TIERS = {
     targetFrameRate: 60,
     dynamicResolution: true,
     breakerQuality: 0.55,
+    maxPixels: 1920 * 1080,
   }),
   medium: T({
     label: "Medium",
@@ -104,6 +107,7 @@ export const TIERS = {
     targetFrameRate: 60,
     dynamicResolution: true,
     breakerQuality: 0.35,
+    maxPixels: 1920 * 1080,
   }),
   low: T({
     label: "Low",
@@ -123,6 +127,7 @@ export const TIERS = {
     targetFrameRate: 45,
     dynamicResolution: true,
     breakerQuality: 0.2,
+    maxPixels: 1280 * 720,
   }),
 };
 
