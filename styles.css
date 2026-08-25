@@ -1,0 +1,72 @@
+:root{
+  --ink:#e8f1f6; --dim:#8fa6b4; --accent:#5fd0ff; --bg:#04080c;
+  --panel:rgba(8,16,22,.78); --edge:rgba(120,190,220,.18);
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;height:100%;overflow:hidden;background:var(--bg);
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ink)}
+#renderCanvas{width:100%;height:100%;display:block;outline:none;touch-action:none}
+.hidden{display:none !important}
+.dim{color:var(--dim)}
+
+/* ---------- boot ---------- */
+#boot{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(120% 90% at 50% 40%,#0b1a24 0%,#04080c 70%);z-index:50;
+  transition:opacity .7s ease}
+#boot.gone{opacity:0;pointer-events:none}
+.boot-inner{text-align:center;width:min(420px,80vw)}
+.boot-title{font-size:38px;letter-spacing:.42em;font-weight:600;margin-left:.42em}
+.boot-sub{margin-top:6px;font-size:11px;letter-spacing:.28em;color:var(--dim);text-transform:uppercase}
+.boot-bar{margin:26px 0 10px;height:2px;background:rgba(255,255,255,.09);overflow:hidden}
+.boot-bar i{display:block;height:100%;width:0%;background:linear-gradient(90deg,#2b7ea8,var(--accent));
+  transition:width .35s ease}
+.boot-status{font-size:11px;color:var(--dim);letter-spacing:.06em;min-height:14px}
+
+/* ---------- hud ---------- */
+#hud{position:fixed;inset:0;pointer-events:none;z-index:20;font-size:11.5px;line-height:1.55}
+#hudLeft{position:absolute;left:14px;top:12px;text-shadow:0 1px 3px rgba(0,0,0,.85)}
+#hudLeft b{font-size:15px;color:var(--accent)}
+#hudHint{position:absolute;left:14px;bottom:12px;text-shadow:0 1px 3px rgba(0,0,0,.85)}
+#hudHint b{color:var(--ink)}
+
+/* ---------- help ---------- */
+#help{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:40;
+  background:var(--panel);backdrop-filter:blur(14px);border:1px solid var(--edge);
+  padding:20px 26px;font-size:12px;min-width:320px}
+#help h3{margin:0 0 12px;font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:var(--accent)}
+#help table{border-collapse:collapse}
+#help td{padding:2px 18px 2px 0;vertical-align:top}
+#help td:first-child{color:var(--accent);white-space:nowrap}
+#help p{margin:14px 0 0;font-size:11px}
+
+/* ---------- panel ---------- */
+#panel{position:fixed;right:0;top:0;bottom:0;width:296px;z-index:30;overflow-y:auto;
+  background:var(--panel);backdrop-filter:blur(16px);border-left:1px solid var(--edge);
+  padding:12px 14px 40px;font-size:11px}
+#panel::-webkit-scrollbar{width:7px}
+#panel::-webkit-scrollbar-thumb{background:rgba(120,190,220,.22)}
+#panel h2{margin:2px 0 10px;font-size:11px;letter-spacing:.26em;text-transform:uppercase;color:var(--accent)}
+.pg{margin:0 0 12px;border-top:1px solid rgba(120,190,220,.12);padding-top:9px}
+.pg>h4{margin:0 0 7px;font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--dim);
+  cursor:pointer;user-select:none}
+.pg>h4::before{content:"\25be  ";font-size:9px}
+.pg.collapsed>h4::before{content:"\25b8  "}
+.pg.collapsed .pg-body{display:none}
+.row{display:flex;align-items:center;gap:8px;margin:5px 0}
+.row label{flex:0 0 96px;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row input[type=range]{flex:1 1 0;min-width:0;height:2px;-webkit-appearance:none;appearance:none;
+  background:rgba(255,255,255,.14);outline:none;border-radius:2px}
+.row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:11px;height:11px;border-radius:50%;
+  background:var(--accent);cursor:pointer;box-shadow:0 0 8px rgba(95,208,255,.55)}
+.row .val{flex:0 0 44px;text-align:right;color:var(--ink);font-variant-numeric:tabular-nums}
+.row select{flex:1 1 0;min-width:0;background:rgba(0,0,0,.42);color:var(--ink);border:1px solid var(--edge);
+  padding:3px 5px;font-family:inherit;font-size:11px;outline:none}
+.row.chk label{flex:1}
+.row input[type=checkbox]{accent-color:var(--accent);width:13px;height:13px}
+.btns{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0 2px}
+.btns button{flex:1 1 auto;min-width:62px;background:rgba(95,208,255,.09);color:var(--ink);
+  border:1px solid var(--edge);padding:5px 6px;font-family:inherit;font-size:10.5px;cursor:pointer;
+  letter-spacing:.05em;transition:background .15s}
+.btns button:hover{background:rgba(95,208,255,.24)}
+.btns button.on{background:rgba(95,208,255,.34);border-color:var(--accent)}
+.note{color:var(--dim);font-size:10px;line-height:1.5;margin:6px 0 0}

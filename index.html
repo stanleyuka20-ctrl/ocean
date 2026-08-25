@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+<title>Abyssal &mdash; Photorealistic Ocean (Babylon.js / WebGPU)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23071018'/%3E%3Cpath d='M0 20q8-6 16 0t16 0v12H0z' fill='%235fd0ff'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<canvas id="renderCanvas" touch-action="none"></canvas>
+
+<div id="boot">
+  <div class="boot-inner">
+    <div class="boot-title">ABYSSAL</div>
+    <div class="boot-sub">spectral ocean &middot; babylon.js</div>
+    <div class="boot-bar"><i id="bootBar"></i></div>
+    <div class="boot-status" id="bootStatus">initialising renderer&hellip;</div>
+  </div>
+</div>
+
+<div id="hud" class="hidden">
+  <div id="hudLeft">
+    <div class="hud-row"><b id="hudFps">--</b> fps<span class="dim" id="hudMs"></span></div>
+    <div class="hud-row dim" id="hudBackend">&mdash;</div>
+    <div class="hud-row dim" id="hudState">&mdash;</div>
+    <div class="hud-row dim" id="hudPos">&mdash;</div>
+  </div>
+  <div id="hudHint" class="dim">
+    click to capture mouse &middot; <b>H</b> panel &middot; <b>C</b> views &middot; <b>?</b> help
+  </div>
+</div>
+
+<div id="help" class="hidden">
+  <h3>Controls</h3>
+  <table>
+    <tr><td>W A S D</td><td>fly the camera</td></tr>
+    <tr><td>Mouse</td><td>look (click to lock)</td></tr>
+    <tr><td>Shift</td><td>boost</td></tr>
+    <tr><td>Space / Ctrl</td><td>rise / descend</td></tr>
+    <tr><td>1 2 3 4</td><td>calm / moderate / rough / storm</td></tr>
+    <tr><td>5 6 7 8 9 0</td><td>weather presets</td></tr>
+    <tr><td>T</td><td>cycle time of day</td></tr>
+    <tr><td>Y</td><td>toggle time animation</td></tr>
+    <tr><td>U</td><td>dive / surface</td></tr>
+    <tr><td>C</td><td>camera / underwater stations</td></tr>
+    <tr><td>F</td><td>foam debug view</td></tr>
+    <tr><td>L</td><td>LOD debug view</td></tr>
+    <tr><td>G</td><td>cycle debug channel</td></tr>
+    <tr><td>H</td><td>toggle settings panel</td></tr>
+    <tr><td>P</td><td>pause wave time</td></tr>
+  </table>
+  <p class="dim">press <b>?</b> or <b>Esc</b> to close</p>
+</div>
+
+<div id="panel" class="hidden"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/babylonjs@9.22.1/babylon.js"></script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

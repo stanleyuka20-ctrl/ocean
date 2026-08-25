@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+
+# Generated captures, sweep dumps, and export packages
+shots/
+Ocean_UE_Export.zip
+Ocean_Config.zip
+*.zip
+sweep_results.json
+sweep_candidates.json
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*~
+
+# Secrets and machine-local files
+.env
+.env.*
+*.pem
+*.key
+credentials.json
+secrets.json
+local.settings.json
