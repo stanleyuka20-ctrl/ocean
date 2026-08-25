@@ -20,7 +20,7 @@ import { SpraySystem } from "./SpraySystem.js";
 import { BuoyancySystem } from "./BuoyancySystem.js";
 import { BreakingWaves } from "./BreakingWaves.js";
 import { CausticsSystem } from "./CausticsSystem.js";
-import { UnderwaterWorld } from "../underwater/UnderwaterWorld.js";
+import { SeafloorSystem } from "./SeafloorSystem.js";
 import { WeatherOceanController } from "./WeatherOceanController.js";
 import { OceanDebugTools } from "./OceanDebugTools.js";
 import { WATER_TYPES } from "./waterTypes.js";
@@ -100,9 +100,8 @@ export class OceanSystem {
     this.spray.build();
 
     this.caustics = new CausticsSystem(this.sim);
-    this.world = new UnderwaterWorld(this.scene, this).build();
-    this.seafloor = this.world.terrain;
-    this.world.applyPreset("tropicalClear", true);
+    this.world = null;
+    this.seafloor = new SeafloorSystem(this.scene, this).build();
     this.weather = new WeatherOceanController(this);
     this.debug = new OceanDebugTools(this);
 
@@ -113,10 +112,8 @@ export class OceanSystem {
 
   /** Tell the reflection / refraction passes what the world contains. */
   setSceneObjects({ reflect = [], refract = [], surfaceMaterials = [] }) {
-    const extra = (this.world && this.world.opaqueMeshes()) || [];
-    const extraMat = (this.world && this.world.materials()) || [];
-    const floor = extra.length ? extra : ((this.seafloor && this.seafloor.mesh) ? [this.seafloor.mesh] : []);
-    const floorMat = extraMat.length ? extraMat : ((this.seafloor && this.seafloor.material) ? [this.seafloor.material] : []);
+    const floor = (this.seafloor && this.seafloor.mesh) ? [this.seafloor.mesh] : [];
+    const floorMat = (this.seafloor && this.seafloor.material) ? [this.seafloor.material] : [];
     this.reflection.build(reflect);
     this.refraction.build(refract.concat(floor));
     this.caustics.materials.length = 0;
@@ -177,8 +174,13 @@ export class OceanSystem {
     const cam = this.camera.globalPosition;
     if (!this._focusOwner) this.focus = [cam.x, cam.z];
     this.foam.update(d, [cam.x, cam.z], drift);
-    this.ripple.update(d, this.focus, [drift[0] * 0.35, drift[1] * 0.35]);
-    this.footprints.update(d, this.focus, [0, 0]);
+    // Fine ripple / footprint fields exist for a character that is not in
+    // this build.  Stepping them every frame is two extra GPU passes of
+    // zeros.
+    if (this._focusOwner) {
+      this.ripple.update(d, this.focus, [drift[0] * 0.35, drift[1] * 0.35]);
+      this.footprints.update(d, this.focus, [0, 0]);
+    }
 
     // rain lands on the water: a few impact rings per frame, scaled by rate
     const rain = this.weather.rain;
@@ -196,15 +198,12 @@ export class OceanSystem {
     this.underwater.seaLevel = this.seaLevel;
     this.underwater.derivTex = this.sim.derivatives[1];
     this.underwater.cascadeL = this.sim.patchSizes[1];
-    if (this.world) this.world.update(d);
     this.underwater.update(d, wh, this.sky, this.water);
     this.underwater._emitMotes(d, this);
     this.underwater._emitBubbles(d, this);
 
-    if (!this.world && this.seafloor) this.seafloor.update();
-    this.material.state.floorDepth = (this.world && this.world.terrain && this.world.terrain.enabled)
-      ? this.world.sampleDepth(cam.x, cam.z)
-      : ((this.seafloor && this.seafloor.enabled) ? this.seafloor.depth : 0);
+    if (this.seafloor) this.seafloor.update();
+    this.material.state.floorDepth = (this.seafloor && this.seafloor.enabled) ? this.seafloor.depth : 0;
 
     // Fill the frame with the water VOLUME while the camera is under.  With no
     // sea bed in an ocean-only scene there is nothing behind the surface, so
@@ -259,9 +258,7 @@ export class OceanSystem {
         seaLevel: this.seaLevel, cascadeL: this.sim.patchSizes,
         waveScale: this.sim.params.waveScale, disp: this.sim.displacement,
         wind: [wv[0] * ws2 * 0.35, 0, wv[1] * ws2 * 0.35],
-        current: this.world
-          ? [this.world.current[0], this.world.current[1] || 0, this.world.current[2]]
-          : [wv[0] * ws2 * 0.03, 0, wv[1] * ws2 * 0.03],
+        current: [wv[0] * ws2 * 0.03, 0, wv[1] * ws2 * 0.03],
         turbulence: this.weather.storm + Math.min(1, ws2 / 22),
         waterTint: new V3(water.scatterCol[0] * 12, water.scatterCol[1] * 12,
                           water.scatterCol[2] * 12),
@@ -400,7 +397,6 @@ export class OceanSystem {
     this.weather = weather;
     this.weather.ocean = this;
     this.setSceneObjects({ reflect: [], refract: [], surfaceMaterials: [] });
-    if (this.world) this.world.rebind();
     // resolution belongs to Presentation; a tier switch must not reach past it
     if (window.__present) window.__present.apply();
     else this.engine.setHardwareScalingLevel(t.hardwareScale);
@@ -416,7 +412,7 @@ export class OceanSystem {
     this.spray.dispose();
     this.underwater.dispose();
     this.buoyancy.dispose();
-    if (this.world) this.world.dispose();
+    if (this.seafloor) this.seafloor.dispose();
     this.world = null;
     this.seafloor = null;
     this.material.dispose();

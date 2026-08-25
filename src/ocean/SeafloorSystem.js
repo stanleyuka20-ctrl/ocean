@@ -55,7 +55,7 @@ export class SeafloorSystem {
     mat.backFaceCulling = false;
 
     const mesh = BJ.MeshBuilder.CreateGround(id, {
-      width: this.extent, height: this.extent, subdivisions: 112,
+      width: this.extent, height: this.extent, subdivisions: 64,
     }, this.scene);
     mesh.material = mat;
     mesh.isPickable = false;
@@ -95,6 +95,8 @@ export class SeafloorSystem {
     m.setFloat("uSeaLevel", o.seaLevel);
     m.setFloat("uFloorDepth", this.depth);
     m.setFloat("uDune", this.dune);
+    m.setFloat("uCamDepth", Math.max(0, o.seaLevel - cam.y));
+    m.setFloat("uMaxCausticDepth", 70);
     m.setFloat("uKind", 0);
     m.setFloat("uRough", 0.82);
     m.setFloat("uMetal", 0);

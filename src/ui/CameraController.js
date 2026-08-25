@@ -19,19 +19,6 @@ export const CAMERA_PRESETS = [
   { key: "sunset",     label: "Sunset",           pos: [0, 1.7, 0],           rot: [2, -100], weather: "sunset" },
   { key: "night",      label: "Night",            pos: [0, 1.7, 0],           rot: [2, 30],  weather: "night" },
   { key: "underwater", label: "Underwater",       pos: [0, -3.4, 0],          rot: [-20, -78] },
-  { key: "reef",       label: "Coral reef",       xz: [-6, 38], above: 1.6, lookXZ: [12, 16], lookAbove: 0.9 },
-  { key: "arch",       label: "Rock arch",        xz: [72, 20], above: 1.65, lookXZ: [72, 38], lookAbove: 3.4 },
-  { key: "dropoff",    label: "Drop-off",         xz: [176, 8], y: -24,     lookXZ: [158, 8], lookAbove: 1.2 },
-  { key: "vents",      label: "Bubble vents",     xz: [42, -13], above: 1.25, lookXZ: [44, -28], lookAbove: 4.2 },
-  { key: "shafts",     label: "Sunlight cavern",  xz: [88, -95], above: 3.5, rot: [-58, 12] },
-  { key: "canyon",     label: "Canyon",           xz: [292, -90], above: 4.5, lookXZ: [318, -78], lookAbove: 14 },
-  { key: "d50",        label: "50 m",             xz: [175, 0], y: -50,     lookXZ: [160, 0], lookAbove: 2 },
-  { key: "d100",       label: "100 m",            xz: [210, -20], y: -100,  lookXZ: [198, -8], lookAbove: 8 },
-  { key: "d250",       label: "250 m",            xz: [250, -50], y: -250,  lookXZ: [268, -40], lookAbove: 12 },
-  { key: "d500",       label: "500 m",            xz: [310, -90], y: -500,  lookXZ: [328, -78], lookAbove: 16 },
-  { key: "d1000",      label: "1 km",             xz: [380, -150], y: -1000, lookXZ: [398, -138], lookAbove: 20 },
-  { key: "d2000",      label: "2 km",             xz: [450, -210], y: -2000, lookXZ: [468, -198], lookAbove: 24 },
-  { key: "d4000",      label: "4 km abyss",       xz: [510, -270], y: -3985, lookXZ: [528, -255], lookAbove: 18 },
   { key: "seafloor",   label: "Sandy bottom",     pos: [0, -2.6, 0],          rot: [24, 32] },
   { key: "deep",       label: "Along the sand",   pos: [0, -6.1, 0],          rot: [8, 28] },
 ];
@@ -86,28 +73,8 @@ export class CameraController {
       this.followTarget = hooks && hooks.get ? hooks.get(p.follow) : null;
     } else {
       this.followTarget = null;
-      if (p.xz && hooks && hooks.bathyY) {
-        const floor = hooks.bathyY(p.xz[0], p.xz[1]);
-        let y = p.y !== undefined ? p.y : floor + (p.above || 2);
-        if (y < floor + 0.75) y = floor + 0.75;
-        this.camera.position.set(p.xz[0], y, p.xz[1]);
-      } else {
-        this.camera.position.set(p.pos[0], p.pos[1], p.pos[2]);
-      }
+      this.camera.position.set(p.pos[0], p.pos[1], p.pos[2]);
       this.camera.rotation.set((p.rot ? p.rot[0] : 0) * D, (p.rot ? p.rot[1] : 0) * D, 0);
-      if (p.lookXZ && hooks && hooks.bathyY) {
-        const tx = p.lookXZ[0], tz = p.lookXZ[1];
-        const ty = p.lookY !== undefined
-          ? p.lookY
-          : hooks.bathyY(tx, tz) + (p.lookAbove !== undefined ? p.lookAbove : 1.5);
-        const dx = tx - this.camera.position.x;
-        const dy = ty - this.camera.position.y;
-        const dz = tz - this.camera.position.z;
-        const len = Math.hypot(dx, dy, dz) || 1;
-        this.camera.rotation.y = Math.atan2(dx, dz);
-        this.camera.rotation.x = -Math.asin(Math.max(-1, Math.min(1, dy / len)));
-        this.camera.rotation.z = 0;
-      }
       if (p.lookSun && hooks && typeof hooks.sunYaw === "number") {
         this.camera.rotation.y = hooks.sunYaw;
       }
@@ -201,13 +168,6 @@ export class CameraController {
     if (ocean && ocean.shoreline) {
       const bed = ocean.shoreline.sample(cam.position.x, cam.position.z);
       if (cam.position.y < bed + 0.6) cam.position.y = bed + 0.6;
-    } else if (ocean && ocean.world && ocean.world.sample) {
-      const bed = ocean.world.sample(cam.position.x, cam.position.z) + 0.7;
-      if (cam.position.y < bed) cam.position.y = bed;
-      const ceil = ocean.world.terrain && ocean.world.terrain.ceiling
-        ? ocean.world.terrain.ceiling(cam.position.x, cam.position.z) : null;
-      if (ceil !== null && cam.position.y > ceil - 0.45 && cam.position.y < ceil + 6)
-        cam.position.y = Math.min(cam.position.y, ceil - 0.45);
     } else if (ocean && ocean.seafloor && ocean.seafloor.enabled) {
       const bed = ocean.seaLevel - ocean.seafloor.depth + 0.85;
       if (cam.position.y < bed) cam.position.y = bed;

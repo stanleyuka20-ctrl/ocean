@@ -3,12 +3,11 @@
 A spectral (FFT) ocean rendered in the browser: three JONSWAP cascades solved on
 the GPU every frame, a camera-centred geo-clipmap running to 262 km, physically
 based water optics, planar reflection + refraction, wind-driven whitecaps with
-spray, mist and subsurface bubbles, weather, a full underwater state with a
-streamed seafloor world (reef, drop-off, canyon, vents, coral, fish), and an
+spray, mist and subsurface bubbles, weather, a full underwater state, and an
 export package that serialises the ocean for Unreal Engine.
 
-There is no island, pier, boat, or character. Surface views are open ocean to a
-natural horizon. Dive with **C** (camera stations) or the debug panel.
+There is no island, pier, boat, or character. Looking in any direction gives
+open ocean to a natural horizon. Dive with **U** or cycle cameras with **C**.
 
 No build step. No npm install. Babylon.js 9 is loaded from a CDN. Every texture
 in the scene is generated procedurally at runtime.
@@ -62,7 +61,6 @@ can take several seconds (the in-page boot bar tracks this).
 | App shell, render loop, page API | `src/main.js` |
 | FFT spectrum / cascades / foam | `src/ocean/` and `src/shaders/oceanSim.js` |
 | Surface / sky / underwater GLSL | `src/shaders/` |
-| Seafloor, coral, fish, vents | `src/underwater/` |
 | Camera stations and keys | `src/ui/CameraController.js` |
 | Quality tiers | `src/core/quality.js` |
 | Unreal export mapping | `src/export/` |
@@ -167,18 +165,16 @@ cannot seam.
 
 ```
 src/
-  core/       Engine tiers (quality.js), sun/moon/cloud/exposure state (Sky.js)
+  core/       Engine tiers (quality.js), sun/moon/cloud/exposure (Sky.js), TAA
   ocean/      OceanSystem, WaveSimulation, OceanMaterial, OceanLODManager,
-              ReflectionSystem, RefractionSystem, FoamSystem, ShorelineSystem,
+              ReflectionSystem, RefractionSystem, FoamSystem, SeafloorSystem,
               UnderwaterSystem, SpraySystem, BuoyancySystem, CausticsSystem,
               WeatherOceanController, OceanDebugTools, oceanCpu + worker
-  env/        heightfield (single source of truth), Terrain, Props, SurfaceMaterial
-  player/     CharacterRig (procedural bones), PlayerAnimator, Player
-  interaction/ OceanInteraction, GpuParticleField, SplashSheets, WetnessSystem,
-              InteractionAudio, InteractionDebug
+  interaction/ GpuParticleField, SplashSheets
+  export/     Unreal specification ZIP
   ui/         CameraController, DebugPanel
   shaders/    atmosphere / oceanSim / oceanSurface / scene / particles /
-              splashSheet GLSL
+              splashSheet / taa GLSL
 ```
 
 ### The simulation, per frame per cascade

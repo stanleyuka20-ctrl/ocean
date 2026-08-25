@@ -43,7 +43,7 @@ export class UnderwaterSystem {
        "uAbsorb", "uScatterCol", "uScatterAmt", "uTurbid", "uSubmerged", "uDroplets",
        "uCamDepth", "uSunScreen", "uGodRays", "uMotes", "uCausticShimmer",
        "uUwCamPos", "uUwRight", "uUwUp", "uUwFwd", "uUwTanHalf", "uUwAspect",
-       "uUwCascadeL", "uSeaLevel", "uShaftQuality", "uCavern", "uCavernOuter"],
+       "uUwCascadeL", "uSeaLevel"],
       ["textureSampler", "uUwDeriv"],
       1.0, this.camera, BJ.Constants.TEXTURE_BILINEAR_SAMPLINGMODE,
       this.engine, false, null, BJ.Constants.TEXTURETYPE_HALF_FLOAT);
@@ -72,7 +72,7 @@ export class UnderwaterSystem {
     if (this._moteAcc < 0.09) return;
     const step = this._moteAcc; this._moteAcc = 0;
     const c = this.camera.globalPosition;
-    const n = Math.round(step * 820 * this.moteDensity * this.motesAmount);
+    const n = Math.round(step * 380 * this.moteDensity * this.motesAmount);
     if (n <= 0) return;
     const y = Math.min(c.y, this.seaLevel - 0.5) - 1.8;
     f.emit({
@@ -100,12 +100,9 @@ export class UnderwaterSystem {
     const step = this._bubAcc; this._bubAcc = 0;
     const c = this.camera.globalPosition;
     const q = this.bubbleAmount * (this.depthFade === undefined ? 1 : this.depthFade);
-    const floorY = (ocean.world && ocean.world.sample)
-      ? ocean.world.sample(c.x, c.z) + 0.35
-      : (this.seaLevel - ((ocean.seafloor && ocean.seafloor.enabled) ? ocean.seafloor.depth : 12));
+    const floorY = this.seaLevel - ((ocean.seafloor && ocean.seafloor.enabled) ? ocean.seafloor.depth : 12);
     const y = Math.min(c.y - 1.6, this.seaLevel - 2.4);
-    const worldScale = ocean.world ? 0.18 : 1;
-    const n = Math.round(step * 860 * q * worldScale);
+    const n = Math.round(step * 420 * q);
     if (n > 0) {
       f.emit({
         position: [c.x, y, c.z],
@@ -115,39 +112,22 @@ export class UnderwaterSystem {
         life: [1.8, 5.2], jitter: 0.9,
       });
     }
-    // a few larger shells near the lens so they read as bubbles, not dust
-    if (!ocean.world) {
     f.emit({
       position: [c.x, Math.min(c.y - 0.55, this.seaLevel - 1.1), c.z],
       radius: 2.1,
       velocity: [0, 0.26, 0], spread: 0.75,
-      count: Math.max(3, Math.round(step * 110 * q)),
+      count: Math.max(2, Math.round(step * 70 * q)),
       size: [0.016, 0.062],
       life: [1.5, 3.8], jitter: 0.65,
     });
-    }
-    // seep from the sand: slow columns that prove there is a bed
     f.emit({
       position: [c.x, floorY + 0.35, c.z],
       radius: 7.5,
       velocity: [0, 0.18, 0], spread: 0.55,
-      count: Math.max(2, Math.round(step * 140 * q * worldScale)),
+      count: Math.max(2, Math.round(step * 90 * q)),
       size: [0.006, 0.022],
       life: [2.4, 6.5], jitter: 0.8,
     });
-    if (!ocean.world && Math.random() < step * 3.8 * q) {
-      const a = Math.random() * Math.PI * 2;
-      const r = 0.8 + Math.random() * 5.5;
-      f.emit({
-        position: [c.x + Math.cos(a) * r, y - 0.4 - Math.random() * 2.2,
-                   c.z + Math.sin(a) * r],
-        radius: 0.45,
-        velocity: [0, 0.78 + Math.random() * 0.55, 0], spread: 0.7,
-        count: 16 + Math.round(Math.random() * 32),
-        size: [0.007, 0.036],
-        life: [1.1, 3.6], jitter: 1.0,
-      });
-    }
   }
 
   update(dt, waterHeight, sky, water) {
@@ -202,11 +182,6 @@ export class UnderwaterSystem {
       effect.setFloat("uCamDepth", Math.max(0, self.camDepth));
       effect.setFloat("uSeaLevel", self.seaLevel);
       effect.setFloat("uGodRays", self.enabled ? self.godRays : 0);
-      effect.setFloat("uShaftQuality", self.shaftQuality === undefined ? 0.75 : self.shaftQuality);
-      const BJ2 = B();
-      const cav = (self._cavern) || { x: 88, y: -2.35, z: -95, w: 6.8, outer: 34 };
-      effect.setVector4("uCavern", new BJ2.Vector4(cav.x, cav.y, cav.z, cav.w));
-      effect.setFloat("uCavernOuter", cav.outer);
 
       // project the sun onto the screen for the shafts
       const m = self.camera.getScene().getTransformMatrix();

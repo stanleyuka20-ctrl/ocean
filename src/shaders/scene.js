@@ -8,7 +8,6 @@
 // ---------------------------------------------------------------------------
 
 import { ATMO_GLSL } from "./atmosphere.js";
-import { BATHY_GLSL } from "../underwater/bathymetry.js";
 
 const ATMO_UNIFORMS = /* glsl */ `
 uniform vec3 uSunDir;
@@ -92,37 +91,8 @@ void main(){
 }
 `;
 
-// Thin-instance variant.  Babylon writes world0..world3; using the same
-// shader as SURFACE_VERT with VERTEXCOLOR collides those locations on WebGPU
-// and invalidates the whole render encoder (black frame).
-export const SURFACE_VERT_INSTANCED = /* glsl */ `
-precision highp float;
-attribute vec3 position;
-attribute vec3 normal;
-attribute vec2 uv;
-attribute vec4 world0;
-attribute vec4 world1;
-attribute vec4 world2;
-attribute vec4 world3;
-uniform mat4 world;
-uniform mat4 viewProjection;
-#include<logDepthDeclaration>
-varying vec3 vWorld;
-varying vec3 vNormal;
-varying vec2 vUV;
-void main(){
-  mat4 finalWorld = world * mat4(world0, world1, world2, world3);
-  vec4 wp = finalWorld * vec4(position, 1.0);
-  vWorld = wp.xyz;
-  vNormal = normalize(mat3(finalWorld) * normal);
-  vUV = uv;
-  gl_Position = viewProjection * wp;
-#include<logDepthVertex>
-}
-`;
-
-// Camera-snapped clipmap of the shared bathymetry field.  Wave physics stay
-// deep-water; only the visual / collision bed follows this height.
+// Camera-following sandy bed.  Wave physics stay deep-water; this mesh is
+// only a visual floor so a dive is not a void.
 export const SEAFLOOR_VERT = /* glsl */ `
 precision highp float;
 attribute vec3 position;
@@ -131,35 +101,44 @@ attribute vec2 uv;
 uniform mat4 world;
 uniform mat4 viewProjection;
 uniform float uSeaLevel;
-uniform float uMaxDepth;
+uniform float uFloorDepth;
 uniform float uDune;
 #include<logDepthDeclaration>
 varying vec3 vWorld;
 varying vec3 vNormal;
 varying vec2 vUV;
-` + BATHY_GLSL + /* glsl */ `
+
+float hash21(vec2 p){
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash21(i);
+  float b = hash21(i + vec2(1.0, 0.0));
+  float c = hash21(i + vec2(0.0, 1.0));
+  float d = hash21(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+float duneH(vec2 p){
+  float h = 0.0, w = 0.55;
+  vec2 q = p * 0.028;
+  for (int i = 0; i < 4; i++){
+    h += w * vnoise(q);
+    q *= 2.07;
+    w *= 0.5;
+  }
+  return (h - 0.5) * 2.0;
+}
 
 void main(){
   vec4 wp = world * vec4(position, 1.0);
-  float d = min(bathyDepth(wp.xz), uMaxDepth);
-  d += (bfbm(wp.xz * 0.09, 3) - 0.5) * uDune * 0.28;
-  float e = 0.55;
-  float dx = min(bathyDepth(wp.xz + vec2(e, 0.0)), uMaxDepth);
-  float dz = min(bathyDepth(wp.xz + vec2(0.0, e)), uMaxDepth);
-  float dW = min(bathyDepth(wp.xz + vec2(-e, 0.0)), uMaxDepth);
-  float dS = min(bathyDepth(wp.xz + vec2(0.0, -e)), uMaxDepth);
-  // Vertical faces belong to dedicated cliff and canyon meshes.  Snapping
-  // steep clipmap verts to the deeper neighbour stops 200 m needles.
-  float slope = (abs(dx - d) + abs(dz - d)) / e;
-  float dDeep = max(d, max(dx, max(dz, max(dW, dS))));
-  float flatten = smoothstep(2.2, 8.5, slope);
-  d = mix(d, dDeep, flatten);
-  dx = mix(dx, max(dx, d), flatten);
-  dz = mix(dz, max(dz, d), flatten);
-  wp.y = uSeaLevel - d;
-  float hx = -(dx - d) / e;
-  float hz = -(dz - d) / e;
-  vec3 n = normalize(mix(vec3(-hx, 1.0, -hz), vec3(0.0, 1.0, 0.0), flatten));
+  float e = 1.6;
+  float h0 = duneH(wp.xz);
+  float hx = duneH(wp.xz + vec2(e, 0.0));
+  float hz = duneH(wp.xz + vec2(0.0, e));
+  wp.y = uSeaLevel - uFloorDepth + h0 * uDune;
+  vec3 n = normalize(vec3(-(hx - h0) * uDune / e, 1.0, -(hz - h0) * uDune / e));
   vWorld = wp.xyz;
   vNormal = n;
   vUV = uv;
@@ -202,12 +181,6 @@ uniform vec3  uCascadeL;
 uniform float uWaveScale;
 uniform float uCamDepth;
 uniform float uMaxCausticDepth;
-uniform vec3  uDivePos;
-uniform vec3  uDiveDir;
-uniform float uDiveI;
-uniform float uDiveRange;
-uniform float uDiveSharp;
-uniform float uLodInner;
 
 varying vec3 vWorld;
 varying vec3 vNormal;
@@ -409,18 +382,6 @@ void main(){
   float dterm = a * a / (PI * pow(max(dot(n, H), 0.0) * max(dot(n, H), 0.0) * (a * a - 1.0) + 1.0, 2.0));
   col += (skyR * fres * (1.0 - rough * 0.85) + sunE * dterm * fres * 0.10 * ndl);
 
-  // dive / vehicle lamp: the only readable light once sunlight is gone
-  vec3 toL = uDivePos - vWorld;
-  float ld = length(toL);
-  vec3 Ld = toL / max(ld, 1e-3);
-  float spot = pow(max(dot(Ld, -normalize(uDiveDir + vec3(0.0, 1e-5, 0.0))), 0.0), max(uDiveSharp, 4.0));
-  float reach = smoothstep(uDiveRange, uDiveRange * 0.22, ld);
-  vec3 extL = uAbsorb + vec3(uTurbid * 0.05);
-  float att = spot * reach * exp(-dot(extL, vec3(0.12, 0.07, 0.04)) * ld);
-  float fill = exp(-ld * 0.038) * smoothstep(uDiveRange * 1.85, 0.0, ld);
-  vec3 lamp = vec3(1.00, 0.96, 0.88);
-  col += albedo * uDiveI * I_PI * lamp * (att * max(dot(n, Ld), 0.0) * 2.35 + fill * 0.28);
-
   // --- underwater tint + caustics ----------------------------------------
   float depth = uSeaLevel - vWorld.y;
   // Fetch before the depth gate so WGSL sees uniform control flow.
@@ -463,11 +424,6 @@ void main(){
     col = col * trans + inscat;
   }
   col += vec3(0.9, 0.95, 1.05) * uFlash * 0.22;
-
-  if (uLodInner > 0.5){
-    float dXZ = length(vWorld.xz - uCamPos.xz);
-    if (dXZ < uLodInner) discard;
-  }
 
   gl_FragColor = vec4(max(col, 0.0), 1.0);
 }
@@ -518,10 +474,6 @@ uniform float uUwAspect;
 uniform sampler2D uUwDeriv;
 uniform float uUwCascadeL;
 uniform float uSeaLevel;
-uniform float uShaftQuality;
-uniform vec4  uCavern;
-uniform float uCavernOuter;
-` + BATHY_GLSL + /* glsl */ `
 
 // NOTE: absorption along the view ray is NOT applied here.  The water surface
 // and the sea floor each attenuate their own radiance with the real path
@@ -554,10 +506,19 @@ void main(){
   vec3 dry = col;
   if (uSubmerged >= 0.5){
 
-  // --- god rays: world-space shafts from the real sun, occluded by the bed
-  // and by the cavern ceiling.  Screen-space angular noise only breaks the
-  // beam up.  It does not aim it.
+  // --- god rays: a short screen-space march toward the sun disc.  The
+  // phase-2 world-space occlusion (bathymetry + cavern SDF, 48 samples)
+  // is gone with that world.
   if (uSunDir.y > 0.04 && uGodRays > 0.001){
+    vec2 dscr = uv - uSunScreen;
+    float distS = length(dscr);
+    float occ = 0.0;
+    for (int i = 0; i < 6; i++){
+      float t = float(i) / 6.0;
+      vec2 suv = mix(uv, uSunScreen, t);
+      occ += texture2D(textureSampler, clamp(suv, 0.0, 1.0)).g;
+    }
+    occ /= 6.0;
     vec3 rd = normalize(uUwFwd
             + uUwRight * ((uv.x * 2.0 - 1.0) * uUwTanHalf * uUwAspect)
             + uUwUp * ((uv.y * 2.0 - 1.0) * uUwTanHalf));
@@ -565,38 +526,12 @@ void main(){
     float g = 0.68;
     float g2 = g * g;
     float hg = (1.0 - g2) / (12.5663706 * pow(max(1e-4, 1.0 + g2 - 2.0 * g * mu), 1.5));
-    float steps = mix(4.0, 8.0, clamp(uShaftQuality, 0.0, 1.0));
-    float occ = 0.0;
-    float stride = 5.5 + uCamDepth * 0.08;
-    for (int i = 1; i <= 8; i++){
-      if (float(i) > steps) break;
-      vec3 p = uUwCamPos + rd * (float(i) * stride);
-      if (p.y > uSeaLevel - 0.05) continue;
-      vec3 q = p;
-      float beam = 1.0;
-      for (int k = 1; k <= 6; k++){
-        q += uSunDir * (6.5 + float(k) * 1.2);
-        if (q.y > uSeaLevel) break;
-        float bed = uSeaLevel - bathyDepthCoarse(q.xz);
-        if (q.y < bed + 0.5){ beam = 0.0; break; }
-        float cr = length(q.xz - uCavern.xz);
-        float ceilY = uCavern.y;
-        if (cr > uCavern.w && cr < uCavernOuter && q.y > ceilY && q.y < ceilY + 9.0){
-          beam = 0.0;
-          break;
-        }
-      }
-      float distW = float(i) * stride;
-      occ += beam * exp(-distW * (0.018 + uTurbid * 0.12));
-    }
-    occ /= max(steps, 1.0);
-    vec2 dscr = uv - uSunScreen;
     float ang = atan(dscr.y, dscr.x);
     float chop = 0.55 + 0.45 * fbm2(vec2(ang * 5.5, uTime * 0.22), 3);
-    float depthFade = exp(-max(uCamDepth, 0.0) * 0.009);
-    float shaftNear = exp(-max(uCamDepth, 0.0) * 0.006);
-    col += uSunColor * uSunI * hg * occ * chop * depthFade * shaftNear
-         * uScatterAmt * (2.15 + 1.4 * clamp(uShaftQuality, 0.0, 1.0)) * uGodRays;
+    float depthFade = exp(-max(uCamDepth, 0.0) * 0.055);
+    float falloff = exp(-distS * 3.4);
+    col += uSunColor * uSunI * hg * occ * chop * depthFade * falloff
+         * uScatterAmt * 1.85 * uGodRays;
   }
 
   // --- suspended matter ----------------------------------------------------

@@ -8,7 +8,6 @@ import { WEATHER_PRESETS, SEA_STATES } from "../ocean/WeatherOceanController.js"
 import { WATER_TYPES } from "../ocean/waterTypes.js";
 import { DEBUG_CHANNELS } from "../ocean/OceanDebugTools.js";
 import { CAMERA_PRESETS } from "./CameraController.js";
-import { UW_PRESETS } from "../underwater/DepthProfile.js";
 
 export class DebugPanel {
   constructor(root, app) {
@@ -278,58 +277,6 @@ export class DebugPanel {
         (v) => { if (o.seafloor) o.seafloor.setEnabled(v); });
       this._check(g, "Spray / rain", () => o.spray.enabled, (v) => { o.spray.enabled = v; });
       this._check(g, "Wakes", () => o.foam.enabled, (v) => { o.foam.enabled = v; });
-    }
-
-    if (o.world) {
-      const g = this._group("Underwater world");
-      const w = o.world;
-      this._buttons(g, Object.keys(UW_PRESETS).map((k) => ({
-        key: k, label: UW_PRESETS[k].label,
-        action: () => w.applyPreset(k, true),
-      })), () => w.presetKey);
-      this._slider(g, "Max depth", 80, 4000, 10, () => w.maxDepth,
-        (v) => { w.maxDepth = v; }, (v) => (+v).toFixed(0) + " m");
-      this._slider(g, "Visibility", 0.2, 2.0, 0.01, () => w.visibility,
-        (v) => { w.visibility = v; o.clarity = v; });
-      this._slider(g, "Absorption R", 0.05, 1.2, 0.01, () => o.water.absorb[0],
-        (v) => { o.water.absorb[0] = v; o._waterTarget.absorb[0] = v; });
-      this._slider(g, "Absorption G", 0.01, 0.6, 0.005, () => o.water.absorb[1],
-        (v) => { o.water.absorb[1] = v; o._waterTarget.absorb[1] = v; });
-      this._slider(g, "Absorption B", 0.005, 0.3, 0.005, () => o.water.absorb[2],
-        (v) => { o.water.absorb[2] = v; o._waterTarget.absorb[2] = v; });
-      this._slider(g, "Scattering", 0.2, 2.0, 0.01, () => o.water.scatterAmt,
-        (v) => { o.water.scatterAmt = v; o._waterTarget.scatterAmt = v; });
-      this._slider(g, "Turbidity", 0, 1.2, 0.01, () => o.water.turbid,
-        (v) => { o.water.turbid = v; o._waterTarget.turbid = v; });
-      this._slider(g, "Volumetric shafts", 0, 1.5, 0.01, () => w.shaftQuality,
-        (v) => { w.shaftQuality = v; });
-      this._slider(g, "Caustic depth cut", 8, 120, 1, () => w.causticCut,
-        (v) => { w.causticCut = v; }, (v) => (+v).toFixed(0) + " m");
-      this._slider(g, "Particle density", 0, 2.5, 0.01, () => w.particleMul,
-        (v) => { w.particleMul = v; });
-      this._slider(g, "Marine snow", 0, 2.5, 0.01, () => w.snowMul,
-        (v) => { w.snowMul = v; });
-      this._slider(g, "Bubble plumes", 0, 2.5, 0.01, () => w.bubbleMul,
-        (v) => { w.bubbleMul = v; });
-      this._slider(g, "Coral density", 0, 2, 0.01, () => w.coralMul,
-        (v) => { w.coralMul = v; });
-      this._slider(g, "Fish density", 0, 2, 0.01, () => w.fishMul,
-        (v) => { w.fishMul = v; });
-      this._slider(g, "Bioluminescence", 0, 2, 0.01, () => w.bioMul,
-        (v) => { w.bioMul = v; });
-      this._slider(g, "Dive light", 0, 80, 0.5, () => (w.diveManual < 0 ? w.dive.intensity : w.diveManual),
-        (v) => { w.diveManual = v; }, (v) => (+v).toFixed(0));
-      this._slider(g, "Dive range", 6, 120, 0.5, () => w.diveRange,
-        (v) => { w.diveRange = v; }, (v) => (+v).toFixed(0) + " m");
-      this._slider(g, "Terrain LOD", 0.4, 2.0, 0.01, () => w.terrain.lodDist,
-        (v) => { w.terrain.lodDist = v; });
-      this._slider(g, "Current X", -0.4, 0.4, 0.005, () => w.current[0],
-        (v) => { w.current[0] = v; });
-      this._slider(g, "Current Z", -0.4, 0.4, 0.005, () => w.current[2],
-        (v) => { w.current[2] = v; });
-      this._slider(g, "Dunes", 0, 3, 0.01, () => w.terrain.dune,
-        (v) => { w.terrain.dune = v; });
-      this._note(g, "C cycles reef, arch, vents, cavern, drop-off, canyon, then depth stations. Dive light is automatic below the photic zone unless you move this slider.");
     }
 
     // ---- debug -------------------------------------------------------------

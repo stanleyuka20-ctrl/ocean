@@ -48,7 +48,7 @@ class App {
     if (!forceGL && navigator.gpu && B.WebGPUEngine && await B.WebGPUEngine.IsSupportedAsync) {
       try {
         engine = new B.WebGPUEngine(this.canvas, {
-          antialias: true, stencil: false, powerPreference: "high-performance",
+          antialias: false, stencil: false, powerPreference: "high-performance",
         });
         await engine.initAsync();
       } catch (e) {
@@ -59,7 +59,7 @@ class App {
     if (!engine) {
       engine = new B.Engine(this.canvas, true, {
         preserveDrawingBuffer: true, stencil: false, alpha: false,
-        powerPreference: "high-performance", antialias: true,
+        powerPreference: "high-performance", antialias: false,
       }, false);
       if (engine.webGLVersion === 1) {
         bootStatus.textContent = "WebGL2 is required.";
@@ -207,8 +207,6 @@ class App {
         this.ocean.setWaterType(WEATHER_PRESETS[k].water);
       },
       sunYaw: Math.atan2(s.x, s.z),
-      bathyY: (x, z) => this.ocean.world
-        ? this.ocean.world.sample(x, z) : this.ocean.seaLevel - 8,
     };
   }
 
@@ -310,7 +308,7 @@ class App {
     const engine = this.engine;
     let dt = engine.getDeltaTime() / 1000;
     if (!isFinite(dt) || dt <= 0) dt = 1 / 60;
-    dt = Math.min(dt, 0.1);
+    dt = Math.min(dt, 0.05);
     // Fixed timestep for measurement.  A harness that waits WALL time between
     // screenshots and diffs them is measuring how far the sea moved, which
     // depends on the frame rate -- so anything that costs GPU time, temporal
@@ -369,8 +367,8 @@ class App {
     const o = this.ocean;
     if (!o.material.material.isReady(o.mesh)) return false;
     if (!this.sky.material.isReady(this.sky.dome)) return false;
-    if (o.world && o.world.terrain && o.world.terrain.material && o.world.terrain.mesh) {
-      if (!o.world.terrain.material.isReady(o.world.terrain.mesh)) return false;
+    if (o.seafloor && o.seafloor.material && o.seafloor.mesh) {
+      if (!o.seafloor.material.isReady(o.seafloor.mesh)) return false;
     }
     return o.buoyancy.ready && !!o.buoyancy.grids;
   }
@@ -439,8 +437,8 @@ class App {
       `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")} · ` +
       `wind ${o.weather.windSpeed.toFixed(1)} m/s · Hs ${o.debug.significantWaveHeight().toFixed(2)} m` +
       (o.underwater.submerged ? " · submerged" : "");
-    const floor = o.world ? o.world.sampleDepth(c.x, c.z)
-      : (o.seafloor && o.seafloor.enabled ? o.seafloor.depth : o.buoyancy.getSurfaceData(c, this._sd || (this._sd = {})).depth);
+    const floor = (o.seafloor && o.seafloor.enabled) ? o.seafloor.depth
+      : o.buoyancy.getSurfaceData(c, this._sd || (this._sd = {})).depth;
     const sub = Math.max(0, o.seaLevel - c.y);
     document.getElementById("hudPos").textContent =
       `x ${c.x.toFixed(0)}  y ${c.y.toFixed(1)}  z ${c.z.toFixed(0)}  ·  ` +
@@ -920,20 +918,13 @@ function exposeApi(app) {
   };
   window.__uwStats = () => {
     const c = app.camera.camera.position;
-    const w = o.world;
-    const p = w && w.profile;
     return {
       backend: app.engine.isWebGPU ? "webgpu" : "webgl2",
       fps: app.engine.getFps(),
       ms: 1000 / Math.max(app.engine.getFps(), 1),
       x: c.x, y: c.y, z: c.z,
       depth: Math.max(0, o.seaLevel - c.y),
-      floor: w ? w.sampleDepth(c.x, c.z) : 0,
-      zone: p && p.name,
-      dive: w && w.dive.intensity,
-      meshes: w && w.stats.meshes,
-      causticCut: w && w.causticCut,
-      sunReach: p && p.sunReach,
+      floor: o.seafloor && o.seafloor.enabled ? o.seafloor.depth : 0,
     };
   };
 }
