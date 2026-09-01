@@ -259,6 +259,7 @@ export class TemporalAA {
     this.velMat.backFaceCulling = false;
     this.velocity.setMaterialForRendering(this.ocean.mesh, this.velMat);
     this.velocity.renderList = [this.ocean.mesh];
+    this.oceanMesh = this.ocean.mesh;
 
     // Particles render into the SAME target, after the ocean, so wherever one
     // is visible its own vector replaces the water's.  Leaving the water's
@@ -559,7 +560,8 @@ export class TemporalAA {
     const w = this.engine.getRenderWidth();
     const h = this.engine.getRenderHeight();
 
-    if (this.velocity.getSize().width !== w) {
+    const velocitySize = this.velocity.getSize();
+    if (velocitySize.width !== w || velocitySize.height !== h) {
       this.velocity.resize({ width: w, height: h });
       this.hist[0].resize({ width: w, height: h });
       this.hist[1].resize({ width: w, height: h });
@@ -664,6 +666,52 @@ export class TemporalAA {
       return m;
     };
     camera.__taaJitter = true;
+    camera.__taaProjectionOriginal = orig;
+  }
+
+  /**
+   * Quality changes replace the ocean mesh, sky dome and particle fields.
+   * Keep the temporal history machinery, but move every velocity override to
+   * the newly-owned resources and invalidate matrices from the old geometry.
+   */
+  rebindOceanResources() {
+    if (!this._built || !this.velocity) return;
+    const old = new Set(this.velocity.renderList ? this.velocity.renderList.slice() : []);
+    if (this.oceanMesh) old.add(this.oceanMesh);
+    if (this.skyDome) old.add(this.skyDome);
+    for (const field of this.particleFields || []) if (field.mesh) old.add(field.mesh);
+    for (const mesh of old) {
+      try { this.velocity.setMaterialForRendering(mesh, null); } catch (e) { /* Babylon version */ }
+    }
+
+    const list = this.velocity.renderList || (this.velocity.renderList = []);
+    list.length = 0;
+    if (this.ocean.mesh) {
+      this.velocity.setMaterialForRendering(this.ocean.mesh, this.velMat);
+      if (this.oceanVelocity) list.push(this.ocean.mesh);
+    }
+    this.oceanMesh = this.ocean.mesh;
+
+    this.skyDome = this.ocean.sky && this.ocean.sky.dome;
+    if (this.skyDome && this.skyVelMat) {
+      this.velocity.setMaterialForRendering(this.skyDome, this.skyVelMat);
+      if (this.skyVelocity) list.push(this.skyDome);
+    }
+
+    this.particleFields = [];
+    const fields = this.ocean.effects && this.ocean.effects.fields;
+    if (fields) {
+      for (const field of fields) {
+        if (!field.mesh || !field.velMaterial) continue;
+        this.velocity.setMaterialForRendering(field.mesh, field.velMaterial);
+        this.particleFields.push(field);
+        if (this.particleVelocity && field.mesh.isEnabled()) list.push(field.mesh);
+      }
+    }
+    this._prevVP = null;
+    this._prevVPBound = null;
+    this._prevVPRot = null;
+    this.reset();
   }
 
   reset() { this._reset = 1; }
@@ -673,10 +721,23 @@ export class TemporalAA {
     const i = this.scene.customRenderTargets.indexOf(this.velocity);
     if (i >= 0) this.scene.customRenderTargets.splice(i, 1);
     this.velocity.dispose();
+    if (this.velMat) this.velMat.dispose(true, false);
+    if (this.skyVelMat) this.skyVelMat.dispose(true, false);
     this.hist.forEach((t) => t.dispose());
     if (this._copyPP) this._copyPP.dispose();
+    if (this._copier && this._copier.dispose) this._copier.dispose();
     this.pp.dispose();
     if (this.sharpen) this.sharpen.dispose();
+    if (this.camera && this.camera.__taaProjectionOriginal) {
+      this.camera.getProjectionMatrix = this.camera.__taaProjectionOriginal;
+      delete this.camera.__taaProjectionOriginal;
+      delete this.camera.__taaJitter;
+    }
+    this.velMat = null;
+    this.skyVelMat = null;
+    this.oceanMesh = null;
+    this.particleFields = [];
+    this._copier = null;
     this._built = false;
   }
 }

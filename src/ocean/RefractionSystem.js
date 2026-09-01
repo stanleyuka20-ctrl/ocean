@@ -33,11 +33,21 @@ export class RefractionSystem {
     this._create();
   }
 
+  _dimensions() {
+    const width = this._size();
+    if (!width) return { width: 0, height: 0 };
+    return {
+      width,
+      height: Math.max(64, Math.round(width *
+        (this.engine.getRenderHeight() / Math.max(this.engine.getRenderWidth(), 1)))),
+    };
+  }
+
   _create() {
     const BJ = B();
     this.destroyTexture();
-    const size = this._size();
-    if (!size) { this.enabled = false; return; }
+    const size = this._dimensions();
+    if (!size.width || !this.renderList.length) { this.enabled = false; return; }
     this.enabled = true;
 
     const rt = new BJ.RenderTargetTexture("oceanRefract",
@@ -45,8 +55,7 @@ export class RefractionSystem {
       // aspect.  A fixed ratio renders the scene at a different shape and every
       // sample lands on the wrong pixel -- worse the wider the window is, which
       // is why an ultrawide display shows it and a 16:9 test does not.
-      { width: size, height: Math.max(64, Math.round(size *
-          (this.engine.getRenderHeight() / Math.max(this.engine.getRenderWidth(), 1)))) },
+      size,
       this.scene, {
         generateDepthBuffer: true,
         generateMipMaps: false,
@@ -55,7 +64,7 @@ export class RefractionSystem {
       });
     rt.renderList = this.renderList.slice();
     rt.clearColor = new BJ.Color4(0, 0, 0, 0);
-    rt.refreshRate = 1;
+    rt.refreshRate = this.subsystemEnabled === false ? 0 : 1;
     rt.renderParticles = false;
     rt.renderSprites = false;
     rt.ignoreCameraViewport = true;
@@ -84,6 +93,16 @@ export class RefractionSystem {
 
   setQuality(q) { if (q !== this.quality) { this.quality = q; this._create(); } }
 
+  resizeIfNeeded() {
+    const want = this._dimensions();
+    if (!this.texture) {
+      if (want.width && this.renderList.length) this._create();
+      return;
+    }
+    const have = this.texture.getSize();
+    if (have.width !== want.width || have.height !== want.height) this._create();
+  }
+
   destroyTexture() {
     if (this.texture) {
       const i = this.scene.customRenderTargets.indexOf(this.texture);
@@ -91,6 +110,7 @@ export class RefractionSystem {
       this.texture.dispose();
       this.texture = null;
     }
+    this.enabled = false;
   }
   dispose() { this.destroyTexture(); }
   /**
@@ -100,13 +120,13 @@ export class RefractionSystem {
    */
   setEnabled(v) {
     this.subsystemEnabled = !!v;
-    if (this.rt) this.rt.refreshRate = v ? 1 : 0;
+    if (this.texture) this.texture.refreshRate = this.subsystemEnabled ? 1 : 0;
     return this.subsystemEnabled;
   }
   subsystemStats() {
     return { enabled: this.subsystemEnabled !== false,
-             updates: this.rt ? (this.rt.getRefreshRate ?
-                                 this.rt.getRefreshRate() : -1) : -1 };
+             updates: this.texture ? (this.texture.getRefreshRate ?
+                                 this.texture.getRefreshRate() : this.texture.refreshRate) : -1 };
   }
 
 }

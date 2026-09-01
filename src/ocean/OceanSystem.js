@@ -46,6 +46,8 @@ export class OceanSystem {
     this.clarity = 1.0;      // >1 clearer water, <1 murkier
     const BJ = B();
     this._depthRect = new BJ.Vector4();
+    this._disturbRect = new BJ.Vector4();
+    this._rippleRect = new BJ.Vector4();
     this._waterTint = new BJ.Vector3();
   }
 
@@ -126,34 +128,41 @@ export class OceanSystem {
   /** Whatever holds focus drives the fine ripple / footprint fields. */
   setFocus(x, z, owner) { this.focus = [x, z]; this._focusOwner = owner || null; }
 
-  setWaterType(key, instant) {
+  setWaterType(key, instant, opts = {}) {
     const w = WATER_TYPES[key];
-    if (!w) return;
+    if (!w) return false;
     this.waterKey = key;
-    this._waterTarget = w;
+    this._waterTarget = Object.assign({}, w, {
+      absorb: w.absorb.slice(),
+      scatterCol: w.scatterCol.slice(),
+    });
+    if (this.weather) {
+      this.weather.waterKey = key;
+      if (!opts.fromPreset) this.weather.presetKey = null;
+    }
     if (instant) {
-      this.water.absorb = w.absorb.slice();
+      const c = Math.max(0.2, this.clarity);
+      this.water.absorb = w.absorb.map((v) => v / c);
       this.water.scatterCol = w.scatterCol.slice();
       this.water.scatterAmt = w.scatterAmt;
-      this.water.turbid = w.turbid;
+      this.water.turbid = w.turbid / c;
     }
+    return true;
   }
 
   _easeWater(dt) {
     const k = 1 - Math.exp(-dt * 0.9);
     const t = this._waterTarget;
     const w = this.water;
+    const c = Math.max(0.2, this.clarity);
     for (let i = 0; i < 3; i++) {
-      w.absorb[i] += (t.absorb[i] - w.absorb[i]) * k;
+      w.absorb[i] += (t.absorb[i] / c - w.absorb[i]) * k;
       w.scatterCol[i] += (t.scatterCol[i] - w.scatterCol[i]) * k;
     }
     w.scatterAmt += (t.scatterAmt - w.scatterAmt) * k;
-    w.turbid += (t.turbid - w.turbid) * k;
     // Clarity is a real optical control: it scales extinction and turbidity,
     // so the depth at which red disappears moves with it.
-    const c = Math.max(0.2, this.clarity);
-    for (let i = 0; i < 3; i++) w.absorb[i] = (t.absorb[i] / c) * 0.5 + w.absorb[i] * 0.5;
-    w.turbid = (t.turbid / c) * 0.5 + w.turbid * 0.5;
+    w.turbid += (t.turbid / c - w.turbid) * k;
   }
 
   // -------------------------------------------------------------------------
@@ -162,7 +171,9 @@ export class OceanSystem {
     this.time += d;
 
     this.weather.update(d);
-    if (this.weather.waterKey !== this.waterKey) this.setWaterType(this.weather.waterKey);
+    if (this.weather.waterKey !== this.waterKey) {
+      this.setWaterType(this.weather.waterKey, false, { fromPreset: true });
+    }
     this._easeWater(d);
 
     this.sky.update(d);
@@ -215,7 +226,8 @@ export class OceanSystem {
     }
 
     if (this.seafloor) this.seafloor.update();
-    this.material.state.floorDepth = (this.seafloor && this.seafloor.enabled) ? this.seafloor.depth : 0;
+    this.material.state.floorDepth = (this.seafloor && this.seafloor.mesh &&
+      this.seafloor.mesh.isEnabled()) ? this.seafloor.depth : 0;
 
     // Fill the frame with the water VOLUME while the camera is under.  With no
     // sea bed in an ocean-only scene there is nothing behind the surface, so
@@ -250,13 +262,13 @@ export class OceanSystem {
                       this.sim.windVector(), this.sky);
 
     // --- the surf zone ------------------------------------------------------
-    this.breakers.syncToSeaState(this.weather.windSpeed,
-      this.debug.significantWaveHeight(), this.weather.storm);
+    const hs = this.debug.significantWaveHeight();
+    this.breakers.syncToSeaState(this.weather.windSpeed, hs, this.weather.storm);
     this.breakers.update(d, cam, {
       time: this.sim.time,
       windDir: wv,
       windSpeed: this.weather.windSpeed,
-      hs: this.debug.significantWaveHeight(),
+      hs,
       quality: this.tier.breakerQuality !== undefined ? this.tier.breakerQuality : 1,
     });
 
@@ -289,7 +301,7 @@ export class OceanSystem {
       surf: this.breakers.uniforms,
     };
     this.material.bind(this.lastCtx);
-    this.bindOceanTextures(m);
+    this.bindOceanTextures(m, hs);
   }
 
   /**
@@ -298,30 +310,35 @@ export class OceanSystem {
    * same samplers -- if it does not receive them, WebGPU refuses the bind group
    * and floods the log rather than failing outright.
    */
-  bindOceanTextures(m) {
+  bindOceanTextures(m, significantWaveHeight) {
     // With no bathymetry the rect's w is 0 and the shader falls straight to
     // uDeepDepth, so nothing samples a texture that does not exist.
     const sl = this.shoreline;
     m.setTexture("uDepthMap", sl ? sl.texture : this.sim.displacement[0]);
-    const r = sl ? sl.rect : [0, 0, 1, 0];
+    const r = sl ? sl.rect : [0, 0, 1, 1];
     m.setVector4("uDepthMapRect", this._depthRect.set(r[0], r[1], r[2], r[3]));
     m.setFloat("uDepthMapSize", sl ? sl.size : 1);
     m.setFloat("uHasDepthMap", sl ? 1 : 0);
-    m.setFloat("uMirrorOn", this.reflection.texture ? 1 : 0);
-    if (this.reflection.texture) m.setTexture("uMirror", this.reflection.texture);
+    const mirrorOn = !!(this.reflection.texture && this.reflection.enabled &&
+      this.reflection.subsystemEnabled !== false);
+    m.setFloat("uMirrorOn", mirrorOn ? 1 : 0);
+    if (mirrorOn) m.setTexture("uMirror", this.reflection.texture);
     else m.setTexture("uMirror", this.sim.displacement[0]);
     // how far above the flat sea level the wave crests reach, so the
     // refraction clip keeps the beach the water is actually drawn over
-    this.refraction.clipTop = Math.min(4.0,
-      0.7 * this.debug.significantWaveHeight() + 0.3);
-    m.setFloat("uRefractOn", this.refraction.texture ? 1 : 0);
-    if (this.refraction.texture) m.setTexture("uRefract", this.refraction.texture);
+    const hs = Number.isFinite(significantWaveHeight) ? significantWaveHeight
+      : this.debug.significantWaveHeight();
+    this.refraction.clipTop = Math.min(4.0, 0.7 * hs + 0.3);
+    const refractOn = !!(this.refraction.texture && this.refraction.enabled &&
+      this.refraction.subsystemEnabled !== false);
+    m.setFloat("uRefractOn", refractOn ? 1 : 0);
+    if (refractOn) m.setTexture("uRefract", this.refraction.texture);
     else m.setTexture("uRefract", this.sim.displacement[0]);
     const fr = this.foam.rect;
-    m.setVector4("uDisturbRect", new (B().Vector4)(fr[0], fr[1], fr[2], fr[3]));
+    m.setVector4("uDisturbRect", this._disturbRect.set(fr[0], fr[1], fr[2], fr[3]));
     m.setTexture("uDisturb", this.foam.texture || this.sim.displacement[0]);
     const rr = this.ripple.rect;
-    m.setVector4("uRippleRect", new (B().Vector4)(rr[0], rr[1], rr[2], rr[3]));
+    m.setVector4("uRippleRect", this._rippleRect.set(rr[0], rr[1], rr[2], rr[3]));
     m.setTexture("uRipple", this.ripple.texture || this.sim.displacement[0]);
   }
 
@@ -354,17 +371,44 @@ export class OceanSystem {
   }
 
   setQuality(name) {
-    if (!TIERS[name] || name === this.tierName) return;
+    if (!TIERS[name] || name === this.tierName) return false;
     const weather = this.weather;
-    const debugChannel = this.debug.channel;
+    const debug = this.debug;
+    const materialState = Object.assign({}, this.material.state);
+    const simState = {
+      params: Object.assign({}, this.sim.params),
+      time: this.sim.time,
+      paused: this.sim.paused,
+      timeScale: this.sim.timeScale,
+      enabled: this.sim.enabled.slice(),
+      frozen: !!this.sim.frozen,
+    };
+    // UnderwaterSystem's post-process is tier-independent. Keep it attached in
+    // place so a quality switch cannot reorder the camera's post-process chain.
+    const underwater = this.underwater;
+    const effectsEnabled = this.effects ? this.effects.enabled : true;
+    const sprayEnabled = this.spray.enabled;
+    const disturbanceState = [this.foam, this.ripple, this.footprints].map((field) => ({
+      enabled: field.enabled,
+      subsystemEnabled: field.subsystemEnabled !== false,
+    }));
+    const causticsStrength = this.caustics.strength;
+    const reflectionEnabled = this.reflection.subsystemEnabled !== false;
+    const refractionEnabled = this.refraction.subsystemEnabled !== false;
+    const focus = this.focus.slice();
+    const focusOwner = this._focusOwner;
 
+    // Every object below owns GPU resources tied to the old wave renderer.
+    // Tear the complete tier graph down; retaining even one particle field or
+    // buoyancy worker here leaves it sampling a disposed simulation.
     this.reflection.dispose();
     this.refraction.dispose();
+    this.spray.dispose();
+    this.buoyancy.dispose();
+    if (this.effects) this.effects.dispose();
     this.foam.dispose();
     this.ripple.dispose();
     this.footprints.dispose();
-    this.spray.dispose();
-    this.underwater.dispose();
     this.material.dispose();
     this.lod.dispose();
     this.sim.dispose();
@@ -375,13 +419,25 @@ export class OceanSystem {
 
     this.sim = new WaveSimulation(this.engine, this.scene, t);
     this.sim.build();
+    this.sim.setParams(simState.params);
+    this.sim.time = simState.time;
+    this.sim.paused = simState.paused;
+    this.sim.timeScale = simState.timeScale;
+    this.sim.enabled = simState.enabled.slice();
+    this.sim.frozen = simState.frozen;
+    this.sim.updateSlopeVariance();
+
+    this.effects = new OceanEffects(this.engine, this.scene,
+      t.breakerQuality !== undefined ? t.breakerQuality : 1).build(this.sim.renderer);
+    this.effects.enabled = effectsEnabled;
     this.lod = new OceanLODManager(this.scene, t);
     this.mesh = this.lod.build();
     this.material = new OceanMaterial(this.scene, t);
     this.mesh.material = this.material.build();
     this.mesh.renderingGroupId = 1;
+    Object.assign(this.material.state, materialState);
+    this.material.state.microDetail = t.microDetail;
     this.material.state.deepDepth = this.shoreline ? this.shoreline.deepDepth : 220;
-    this.material.state.debug = debugChannel;
 
     this.reflection = new ReflectionSystem(this.scene, this.engine, t);
     this.refraction = new RefractionSystem(this.scene, this.engine, t);
@@ -398,20 +454,38 @@ export class OceanSystem {
     this.footprints = new FoamSystem(this.engine, this.scene, {
       size: 512, extent: 48, decay: 0.055, mode: 1, speed: 0, name: "footprints" });
     this.footprints.build(this.sim.renderer);
-    this.focus = [0, 0];        // what the fine fields follow (the player)
-    this.underwater = new UnderwaterSystem(this.scene, this.engine, this.camera, t);
-    this.underwater.build();
+    [this.foam, this.ripple, this.footprints].forEach((field, i) => {
+      field.enabled = disturbanceState[i].enabled;
+      field.setEnabled(disturbanceState[i].subsystemEnabled);
+    });
+    this.focus = focus;
+    this._focusOwner = focusOwner;
+
+    this.buoyancy = new BuoyancySystem(this.sim, this.shoreline, {
+      sizes: t.sim[0] >= 128 ? [128, 64] : [64, 32],
+    });
+    this.buoyancy.build();
+    this.underwater = underwater;
+    this.underwater.tier = t;
     this.spray = new SpraySystem(this.scene, this.camera, t, this.buoyancy);
     this.spray.build();
+    this.spray.enabled = sprayEnabled;
     this.caustics = new CausticsSystem(this.sim);
-    this.buoyancy.sim = this.sim;
+    this.caustics.strength = causticsStrength;
     this.weather = weather;
     this.weather.ocean = this;
+    this.weather._dirty = true;
+    this.debug = debug;
+    this.debug.ocean = this;
+    this.debug.setChannel(this.debug.channel);
+    this.debug.setWireframe(this.debug.showWire);
     this.setSceneObjects({ reflect: [], refract: [], surfaceMaterials: [] });
+    this.reflection.setEnabled(reflectionEnabled);
+    this.refraction.setEnabled(refractionEnabled);
     // resolution belongs to Presentation; a tier switch must not reach past it
     if (window.__present) window.__present.apply();
     else this.engine.setHardwareScalingLevel(t.hardwareScale);
-    return this;
+    return true;
   }
 
   dispose() {
@@ -423,6 +497,7 @@ export class OceanSystem {
     this.spray.dispose();
     this.underwater.dispose();
     this.buoyancy.dispose();
+    if (this.effects) this.effects.dispose();
     if (this.seafloor) this.seafloor.dispose();
     this.world = null;
     this.seafloor = null;

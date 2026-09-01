@@ -70,7 +70,8 @@ export class WeatherOceanController {
     };
     this.target = Object.assign({}, this.current);
     this.speed = 0.28;                 // 1/e per second
-    this.waterKey = "tropical";
+    this.seaKey = "moderate";
+    this.waterKey = "atlantic";
     this.presetKey = "clearAtlantic";
     this._h0Timer = 0;
     this._dirty = true;   // force one spectrum push on the first update
@@ -78,8 +79,9 @@ export class WeatherOceanController {
 
   applyPreset(key, opts = {}) {
     const p = WEATHER_PRESETS[key];
-    if (!p) return;
+    if (!p) return false;
     this.presetKey = key;
+    this.seaKey = p.sea;
     const s = SEA_STATES[p.sea];
     Object.assign(this.target, {
       windSpeed: s.windSpeed, fetch: s.fetch, choppy: s.choppy, swell: s.swell,
@@ -93,11 +95,13 @@ export class WeatherOceanController {
     if (p.timeOfDay !== undefined && opts.time !== false) {
       this.ocean.sky.timeOfDay = p.timeOfDay;
     }
+    return true;
   }
 
   applySeaState(key, opts = {}) {
     const s = SEA_STATES[key];
-    if (!s) return;
+    if (!s) return false;
+    this.presetKey = null;
     this.seaKey = key;
     Object.assign(this.target, {
       windSpeed: s.windSpeed, fetch: s.fetch, choppy: s.choppy, swell: s.swell,
@@ -105,12 +109,16 @@ export class WeatherOceanController {
     });
     this._dirty = true;
     if (opts.instant) Object.assign(this.current, this.target);
+    return true;
   }
 
   set(key, value, instant) {
+    if (!KEYS.includes(key) || !Number.isFinite(value)) return false;
+    this.presetKey = null;
     this.target[key] = value;
     this._dirty = true;
     if (instant) this.current[key] = value;
+    return true;
   }
 
   update(dt) {

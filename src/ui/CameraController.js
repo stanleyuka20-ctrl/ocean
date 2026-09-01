@@ -8,21 +8,23 @@ import { isMobileDevice } from "../core/quality.js";
 
 const B = () => window.BABYLON;
 const D = Math.PI / 180;
+const isInteractiveTarget = (target) => !!(target && target.closest &&
+  target.closest("button,input,select,textarea,a,[contenteditable='true'],[role='dialog']"));
 
 export const CAMERA_PRESETS = [
-  { key: "waterline",  label: "Water level",      pos: [0, 1.7, 0],           rot: [2, 30] },
+  { key: "waterline",  label: "At the waterline", pos: [0, 1.7, 0],           rot: [2, 30] },
   { key: "horizon",    label: "Horizon",          pos: [0, 3.0, 0],           rot: [1, 96] },
-  { key: "glitter",    label: "Glitter path",     pos: [0, 2.1, 0],           rot: [6, 0], lookSun: true },
+  { key: "glitter",    label: "Sun reflection",   pos: [0, 2.1, 0],           rot: [6, 0], lookSun: true },
   { key: "eyelevel",   label: "Open ocean",       pos: [2400, 2.4, -1800],    rot: [3, -152] },
   { key: "lowaerial",  label: "Low aerial",       pos: [-900, 24, 1200],      rot: [22, 64] },
   { key: "aerial",     label: "Aerial",           pos: [140, 120, -260],      rot: [34, -120] },
   { key: "highaerial", label: "High aerial",      pos: [300, 640, 900],       rot: [46, -178] },
-  { key: "storm",      label: "Storm",            pos: [0, 8.0, 0],           rot: [8, 30],  weather: "storm" },
-  { key: "sunset",     label: "Sunset",           pos: [0, 1.7, 0],           rot: [2, -100], weather: "sunset" },
-  { key: "night",      label: "Night",            pos: [0, 1.7, 0],           rot: [2, 30],  weather: "night" },
+  { key: "storm",      label: "Storm scene",      pos: [0, 8.0, 0],           rot: [8, 30],  weather: "storm" },
+  { key: "sunset",     label: "Sunset scene",     pos: [0, 1.7, 0],           rot: [2, -100], weather: "sunset" },
+  { key: "night",      label: "Night scene",      pos: [0, 1.7, 0],           rot: [2, 30],  weather: "night" },
   { key: "underwater", label: "Underwater",       pos: [0, -3.4, 0],          rot: [-20, -78] },
-  { key: "seafloor",   label: "Sandy bottom",     pos: [0, -2.6, 0],          rot: [24, 32] },
-  { key: "deep",       label: "Along the sand",   pos: [0, -6.1, 0],          rot: [8, 28] },
+  { key: "seafloor",   label: "Near the seafloor", pos: [0, -2.6, 0],         rot: [24, 32] },
+  { key: "deep",       label: "Seafloor glide",   pos: [0, -6.1, 0],          rot: [8, 28] },
 ];
 
 export class CameraController {
@@ -92,8 +94,14 @@ export class CameraController {
       if (!engine.isPointerLock) engine.enterPointerlock();
     });
     window.addEventListener("keydown", (e) => {
+      if (isInteractiveTarget(e.target) || e.isComposing) {
+        this.keys[e.code] = false;
+        return;
+      }
       this.keys[e.code] = true;
-      if (["Space", "ControlLeft", "ShiftLeft"].indexOf(e.code) >= 0) e.preventDefault();
+      if (["Space", "ControlLeft", "ControlRight", "ShiftLeft", "ShiftRight"].indexOf(e.code) >= 0) {
+        e.preventDefault();
+      }
     });
     window.addEventListener("keyup", (e) => { this.keys[e.code] = false; });
     window.addEventListener("blur", () => { this.keys = Object.create(null); });
@@ -211,10 +219,12 @@ export class CameraController {
     if (k.Space || this.riseHold || this._padRise) move.y += 1;
     if (k.ControlLeft || k.ControlRight || this.downHold || this._padDown) move.y -= 1;
     if (move.lengthSquared() > 0) {
-      move.normalize().scaleInPlace(sp * dt);
+      const ml = move.length();
+      if (ml > 1) move.scaleInPlace(1 / ml);
+      move.scaleInPlace(sp * dt);
       cam.position.addInPlace(move);
     }
-    if (under && !k.Space && !k.ControlLeft && !this.riseHold && !this.downHold && !this._padRise && !this._padDown) {
+    if (under && !k.Space && !k.ControlLeft && !k.ControlRight && !this.riseHold && !this.downHold && !this._padRise && !this._padDown) {
       // Only bob in the top metre -- a constant 0.18 m/s rise surfaces a
       // dive in seconds and is why underwater views kept collapsing to
       // god-rays-in-a-void just under the waves.

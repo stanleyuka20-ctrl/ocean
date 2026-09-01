@@ -164,6 +164,10 @@ void main(){
            * (0.4 + uTurbulence) * uDt;
       size += uDt * (0.004 + size * 0.028);
       size = min(size, 0.36);
+      p += v * uDt;
+      // A bubble that reaches the moving interface has vented into the air;
+      // keeping it alive above the wave makes glass beads float in the sky.
+      if (p.y > surf - max(0.025, size * 0.2)) life = 0.0;
     }
   }
 

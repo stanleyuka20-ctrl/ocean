@@ -204,8 +204,24 @@ export class Sky {
     }
   }
 
+  /** Recompile the atmosphere constants when the user changes quality. */
+  setTier(tier) {
+    if (!tier || tier === this.tier) return this.dome;
+    const wasEnabled = this.dome ? this.dome.isEnabled() : true;
+    this.dispose();
+    this.tier = tier;
+    this.build();
+    if (this.dome) this.dome.setEnabled(wasEnabled);
+    return this.dome;
+  }
+
   dispose() {
-    if (this.dome) this.dome.dispose(false, true);
-    this.dome = null; this.material = null;
+    if (this.dome) {
+      this.dome.material = null;
+      this.dome.dispose(false, false);
+    }
+    if (this.material) this.material.dispose(true, false);
+    this.dome = null;
+    this.material = null;
   }
 }

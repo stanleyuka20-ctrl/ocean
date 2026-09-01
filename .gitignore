@@ -5,6 +5,9 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
+node_modules/
+dist/
+.wrangler/
 
 # Generated captures, sweep dumps, and export packages
 shots/

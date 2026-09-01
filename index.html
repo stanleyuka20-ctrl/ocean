@@ -1,84 +1,165 @@
 <!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-<meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="mobile-web-app-capable" content="yes" />
-<title>Abyssal &mdash; Photorealistic Ocean (Babylon.js / WebGPU)</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23071018'/%3E%3Cpath d='M0 20q8-6 16 0t16 0v12H0z' fill='%235fd0ff'/%3E%3C/svg%3E" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="description" content="Explore a photorealistic real-time ocean in your browser with GPU FFT waves, dynamic weather, underwater scenes, and Babylon.js." />
+<meta name="theme-color" content="#041019" />
+<meta name="color-scheme" content="dark" />
+<link rel="canonical" href="https://stanleyuka20-ctrl.github.io/ocean/" />
+
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Abyssal" />
+<meta property="og:title" content="Abyssal — Photorealistic Real-Time Ocean" />
+<meta property="og:description" content="A living spectral ocean in your browser — explore cinematic weather, open-water waves, and the world beneath the surface." />
+<meta property="og:url" content="https://stanleyuka20-ctrl.github.io/ocean/" />
+<meta property="og:image" content="https://stanleyuka20-ctrl.github.io/ocean/assets/abyssal-og.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content="Sunlit blue open ocean with the title Abyssal and the words A living spectral ocean in your browser." />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Abyssal — Photorealistic Real-Time Ocean" />
+<meta name="twitter:description" content="A living spectral ocean in your browser." />
+<meta name="twitter:image" content="https://stanleyuka20-ctrl.github.io/ocean/assets/abyssal-og.png" />
+
+<title>Abyssal — Photorealistic Real-Time Ocean</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23041019'/%3E%3Cpath d='M2 19q7-5 14 0t14 0v11H2z' fill='%235fd0ff'/%3E%3Cpath d='M2 22q7-4 14 0t14 0' fill='none' stroke='%23e9fbff' stroke-width='1.5'/%3E%3C/svg%3E" />
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-<canvas id="renderCanvas" touch-action="none"></canvas>
+<main id="experience">
+  <h1 class="sr-only">Abyssal — interactive real-time ocean</h1>
+  <p id="canvasDescription" class="sr-only">
+    A continuously rendered open ocean. Use the visible controls or W A S D and the mouse to explore. Motion, lightning, quality, weather, and underwater effects can be adjusted from Controls.
+  </p>
+  <canvas id="renderCanvas" tabindex="0" aria-label="Interactive real-time ocean" aria-describedby="canvasDescription" touch-action="none">
+    Abyssal needs a current browser with WebGPU or WebGL 2. Use the controls below the canvas if the renderer cannot start.
+  </canvas>
+</main>
 
-<div id="boot">
+<div id="boot" role="dialog" aria-modal="true" aria-labelledby="bootTitle" aria-describedby="bootStatus">
+  <div class="boot-ambient" aria-hidden="true"></div>
   <div class="boot-inner">
-    <div class="boot-title">ABYSSAL</div>
-    <div class="boot-sub">spectral ocean &middot; babylon.js</div>
-    <div class="boot-bar"><i id="bootBar"></i></div>
-    <div class="boot-status" id="bootStatus">initialising renderer&hellip;</div>
+    <div class="eyebrow">Open-ocean observatory</div>
+    <div class="boot-title" id="bootTitle">ABYSSAL</div>
+    <div class="boot-sub">Real-time ocean simulation</div>
+    <div class="boot-bar" id="bootProgress" role="progressbar" aria-label="Loading ocean" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+      <i id="bootBar"></i>
+    </div>
+    <div class="boot-status" id="bootStatus" role="status" aria-live="polite">Starting graphics…</div>
+    <div id="bootActions" class="boot-actions hidden">
+      <button type="button" id="bootRetry">Retry</button>
+      <button type="button" id="bootCompatibility">Use WebGL 2 compatibility mode</button>
+    </div>
   </div>
 </div>
 
-<div id="hud" class="hidden">
-  <div id="hudLeft">
-    <div class="hud-row"><b id="hudFps">--</b> fps<span class="dim" id="hudMs"></span></div>
-    <div class="hud-row dim" id="hudBackend">&mdash;</div>
-    <div class="hud-row dim" id="hudState">&mdash;</div>
-    <div class="hud-row dim" id="hudPos">&mdash;</div>
-    <div class="hud-row dim" id="hudPerf">&mdash;</div>
+<div id="brandMark" class="brand-mark hidden" aria-hidden="true">
+  <span class="brand-wave"></span>
+  <span><strong>ABYSSAL</strong><small>OCEAN OBSERVATORY</small></span>
+</div>
+
+<nav id="quickActions" class="quick-actions hidden" aria-label="Ocean actions">
+  <button type="button" id="quickView" data-icon="◎">
+    <span>Next view</span><kbd>C</kbd>
+  </button>
+  <button type="button" id="quickPanel" data-icon="≋" aria-controls="panel" aria-expanded="false">
+    <span>Controls</span><kbd>H</kbd>
+  </button>
+  <button type="button" id="quickHelp" data-icon="?" aria-controls="help" aria-expanded="false">
+    <span>Help</span><kbd>?</kbd>
+  </button>
+</nav>
+
+<div id="hud" class="hidden" aria-label="Live ocean conditions">
+  <div id="hudLeft" class="glass-chip">
+    <div class="hud-row hud-primary"><b id="hudFps">--</b> FPS<span class="dim" id="hudMs"></span></div>
+    <div class="hud-row dim" id="hudBackend">—</div>
+    <div class="hud-row" id="hudState">—</div>
+    <div class="hud-row dim" id="hudPos">—</div>
+    <div class="hud-row dim" id="hudPerf">—</div>
   </div>
-  <div id="hudHint" class="dim">
-    click to capture mouse &middot; <b>H</b> panel &middot; <b>C</b> views &middot; <b>?</b> help
+  <div id="hudHint" class="glass-chip dim">
+    Click the ocean to start mouse look <span>·</span> <b>H</b> Controls <span>·</span> <b>C</b> Next view <span>·</span> <b>?</b> Help
   </div>
 </div>
 
-<div id="help" class="hidden">
-  <h3>Controls</h3>
-  <table>
-    <tr><td>W A S D</td><td>fly the camera</td></tr>
-    <tr><td>Mouse</td><td>look (click to lock)</td></tr>
-    <tr><td>Shift</td><td>boost</td></tr>
-    <tr><td>Space / Ctrl</td><td>rise / descend</td></tr>
-    <tr><td>1 2 3 4</td><td>calm / moderate / rough / storm</td></tr>
-    <tr><td>5 6 7 8 9 0</td><td>weather presets</td></tr>
-    <tr><td>T</td><td>cycle time of day</td></tr>
-    <tr><td>Y</td><td>toggle time animation</td></tr>
-    <tr><td>U</td><td>dive / surface</td></tr>
-    <tr><td>C</td><td>cycle camera views</td></tr>
-    <tr><td>F</td><td>foam debug view</td></tr>
-    <tr><td>L</td><td>LOD debug view</td></tr>
-    <tr><td>G</td><td>cycle debug channel</td></tr>
-    <tr><td>H</td><td>toggle settings panel</td></tr>
-    <tr><td>P</td><td>pause wave time</td></tr>
-    <tr><td>Left stick</td><td>fly (phone)</td></tr>
-    <tr><td>Right drag</td><td>look around (phone)</td></tr>
-    <tr><td>Rise / Down</td><td>Space / Ctrl</td></tr>
-    <tr><td>Sprint</td><td>Shift boost</td></tr>
-    <tr><td>Dive / View / Menu</td><td>U / C / H</td></tr>
-  </table>
-  <p class="dim">press <b>?</b> or <b>Esc</b> to close</p>
-</div>
+<section id="onboard" class="onboard hidden" aria-labelledby="onboardTitle">
+  <div class="eyebrow">First voyage</div>
+  <h2 id="onboardTitle">The whole horizon is yours.</h2>
+  <p id="onboardCopy">Click the ocean to look around. Use <strong>W A S D</strong> to move, <strong>C</strong> for a new vantage point, or open Controls to shape the sea.</p>
+  <div class="onboard-actions">
+    <button type="button" id="onboardControls">Open controls</button>
+    <button type="button" id="onboardDismiss" class="quiet">Start exploring</button>
+  </div>
+</section>
 
-<div id="panel" class="hidden"></div>
+<div id="sceneStatus" class="scene-status hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+
+<section id="help" class="dialog hidden" role="dialog" aria-modal="true" aria-labelledby="helpTitle" aria-hidden="true">
+  <header class="dialog-head">
+    <div>
+      <div class="eyebrow">Field guide</div>
+      <h2 id="helpTitle">Explore Abyssal</h2>
+    </div>
+    <button type="button" id="helpClose" class="icon-button" aria-label="Close help">×</button>
+  </header>
+  <div class="help-grid">
+    <section>
+      <h3>Explore</h3>
+      <dl>
+        <div><dt>W A S D</dt><dd>Move</dd></div>
+        <div><dt>Mouse</dt><dd>Look around — click the ocean to start</dd></div>
+        <div><dt>Shift</dt><dd>Move faster</dd></div>
+        <div><dt>Space / Ctrl</dt><dd>Ascend / descend</dd></div>
+        <div><dt>U</dt><dd>Dive or surface</dd></div>
+        <div><dt>C</dt><dd>Next camera view</dd></div>
+      </dl>
+    </section>
+    <section>
+      <h3>Scene</h3>
+      <dl>
+        <div><dt>1–4</dt><dd>Calm / Moderate / Rough / Storm</dd></div>
+        <div><dt>5–0</dt><dd>Weather and lighting presets</dd></div>
+        <div><dt>T</dt><dd>Next time of day</dd></div>
+        <div><dt>Y</dt><dd>Start or pause time animation</dd></div>
+        <div><dt>P</dt><dd>Pause or resume waves</dd></div>
+        <div><dt>H / ?</dt><dd>Controls / Help</dd></div>
+      </dl>
+    </section>
+    <section>
+      <h3>Touch & diagnostics</h3>
+      <dl>
+        <div><dt>Left stick</dt><dd>Move</dd></div>
+        <div><dt>Open-water drag</dt><dd>Look around</dd></div>
+        <div><dt>Hold arrows</dt><dd>Ascend, descend, or move faster</dd></div>
+        <div><dt>F / L / G</dt><dd>Foam, detail zones, diagnostic view</dd></div>
+      </dl>
+    </section>
+  </div>
+  <p class="dialog-foot">Press <kbd>?</kbd> or <kbd>Esc</kbd> to close help.</p>
+</section>
+
+<aside id="panel" class="hidden" aria-label="Ocean controls" aria-hidden="true"></aside>
 
 <div id="touch" class="hidden" aria-hidden="true">
-  <div id="touchJoy" aria-label="Move">
+  <div id="touchJoy" aria-hidden="true">
     <div id="touchKnob"></div>
+    <span class="joy-label">Move</span>
   </div>
   <div id="touchBtns">
-    <button type="button" class="touch-btn hold" data-act="rise">Rise</button>
-    <button type="button" class="touch-btn hold" data-act="sprint">Sprint</button>
-    <button type="button" class="touch-btn hold" data-act="down">Down</button>
-    <button type="button" class="touch-btn" data-act="dive">Dive</button>
-    <button type="button" class="touch-btn" data-act="view">View</button>
-    <button type="button" class="touch-btn" data-act="panel">Menu</button>
+    <button type="button" class="touch-btn hold" data-act="rise" aria-label="Ascend"><span>↑</span> Ascend</button>
+    <button type="button" class="touch-btn hold" data-act="sprint" aria-label="Move faster"><span>»</span> Faster</button>
+    <button type="button" class="touch-btn hold" data-act="down" aria-label="Descend"><span>↓</span> Descend</button>
+    <button type="button" class="touch-btn" data-act="dive" aria-label="Dive below the surface"><span>↓</span> <span data-label>Dive</span></button>
+    <button type="button" class="touch-btn" data-act="view" aria-label="Next camera view"><span>◎</span> Next view</button>
+    <button type="button" class="touch-btn" data-act="panel" aria-label="Open controls" aria-controls="panel" aria-expanded="false"><span>≋</span> Controls</button>
   </div>
-  <div id="rotateHint" class="hidden">Turn the phone sideways</div>
+  <div id="rotateHint" class="hidden">Rotate to landscape for more room</div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/babylonjs@9.22.1/babylon.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/babylonjs@9.22.1/babylon.js" integrity="sha384-sIkTYCqP0vcoFKqRDTw4j+DkDWeKJn/9HUfSJ8b3LsRz8wP4MZMLMSJjuAu4wcfl" crossorigin="anonymous"></script>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

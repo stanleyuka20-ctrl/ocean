@@ -441,7 +441,19 @@ export class GpuParticleField {
     this.vel.forEach((t) => t.dispose());
     this.spawnTex.dispose();
     this.ew.dispose();
-    this.mesh.dispose(false, true);
+    if (this.mesh) {
+      this.mesh.material = null;
+      this.mesh.dispose(false, false);
+    }
+    if (this.material) this.material.dispose(true, false);
+    if (this.velMaterial) this.velMaterial.dispose(true, false);
+    this.pos = null;
+    this.vel = null;
+    this.spawnTex = null;
+    this.ew = null;
+    this.mesh = null;
+    this.material = null;
+    this.velMaterial = null;
     this._built = false;
   }
 }

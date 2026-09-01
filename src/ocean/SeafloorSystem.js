@@ -44,7 +44,8 @@ export class SeafloorSystem {
           "uAbsorb", "uScatterCol", "uScatterAmt", "uTurbid",
           "uCaustics", "uWetness", "uUnderwaterView",
           "uWetTop", "uWetAmt", "uWetSoak", "uFootRect",
-          "uCascadeL", "uWaveScale", "uFloorDepth", "uDune", "uTime",
+          "uCascadeL", "uWaveScale", "uFloorDepth", "uDune", "uCamDepth",
+          "uMaxCausticDepth", "uTime",
           "uSunDir", "uSunColor", "uMoonDir", "uMoonColor",
           "uSunI", "uMoonI", "uTurbidity", "uCloudCover", "uCloudSharp",
           "uCloudBright", "uStorm", "uFlash", "uCloudDrift",
@@ -133,7 +134,12 @@ export class SeafloorSystem {
   }
 
   dispose() {
-    if (this.mesh) { this.mesh.dispose(false, true); this.mesh = null; }
+    if (this.mesh) {
+      this.mesh.material = null;
+      this.mesh.dispose(false, false);
+      this.mesh = null;
+    }
+    if (this.material) this.material.dispose(true, false);
     this.material = null;
   }
 }

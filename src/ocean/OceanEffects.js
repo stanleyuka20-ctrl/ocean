@@ -78,5 +78,9 @@ export class OceanEffects {
     if (!this.fields) return;
     for (const f of this.fields) f.dispose();
     this.fields = null;
+    this.droplets = null;
+    this.mist = null;
+    this.bubbles = null;
+    this.motes = null;
   }
 }

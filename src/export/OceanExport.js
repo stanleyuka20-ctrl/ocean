@@ -6,13 +6,13 @@
 //
 //    CAN cross   the numbers.  Spectrum, cascades, optics, foam, weather --
 //                every value that defines how this ocean looks and moves.
-//    CAN cross   flat data: a reference mesh, LUTs, reference renders.
+//    CAN cross   flat data: JSON configuration and implementation notes.
 //    CANNOT cross the WebGPU compute passes, the GLSL, the FFT, the CDLOD
 //                clipmap or the particle systems.  glTF has no representation
 //                for any of that, and claiming otherwise would produce an
 //                import that looks like a dead plane of water.
 //
-//  So the package is a SPECIFICATION plus reference data, and the Unreal side
+//  So the package is a SPECIFICATION, and the Unreal side
 //  rebuilds the simulation natively from it.  README_UNREAL_IMPORT.md maps each
 //  parameter to where it goes.
 // ---------------------------------------------------------------------------
@@ -267,8 +267,8 @@ that. Importing a mesh from here and calling the conversion done gives you a
 static plane of water, which the brief lists as a failure condition.
 
 What crosses the boundary is **the numbers** — every value that defines how this
-ocean looks and moves — plus reference renders to match against. The simulation
-is rebuilt natively on the Unreal side.
+ocean looks and moves — plus an implementation map. The simulation is rebuilt
+natively on the Unreal side.
 
 ## Units and axes
 
@@ -284,7 +284,8 @@ A Babylon position \`(x, y, z)\` becomes an Unreal position \`(z, x, y) * ${M_TO
 cascade is a ${spec.cascades[0].patchSizeMeters * M_TO_UU} uu patch, and a
 significant wave height of ${spec.measured.significantWaveHeightMeters} m is
 ${(spec.measured.significantWaveHeightMeters * M_TO_UU).toFixed(0)} uu. Verify
-against \`Reference/Babylon_4K/\` rather than assuming the transform is right.
+against the live Abyssal scene (or captures you add to the package) rather than
+assuming the transform is right.
 
 ## Parameter map
 
@@ -343,8 +344,8 @@ square patches, and removing them is a hard requirement.
 
 ## What to verify
 
-Compare against \`Reference/Babylon_4K/\` at matching sun angle and weather:
-wave height and wavelength, crest shape, foam placement, water colour with depth,
+Compare against the live Abyssal scene at matching sun angle and weather: wave
+height and wavelength, crest shape, foam placement, water colour with depth,
 glitter path length, and the horizon. Then repeat the no-squares sweep from 1 m
 to 1000 m above the surface.
 `;
@@ -355,8 +356,8 @@ function licenses() {
 
 ## This package
 
-The ocean configuration, documentation and reference renders in this package are
-produced by the Abyssal ocean project and may be used freely.
+The ocean configuration and documentation in this package are produced by the
+Abyssal ocean project and may be used freely.
 
 ## Dependencies
 
@@ -447,9 +448,10 @@ Shoreline surf module: ${brk.shorelineSurf.enabled ? "active" : "not present in 
   usual planar-reflection parallax error.
 - The CPU wave mirror covers the two coarsest cascades, so the smallest chop is
   not felt by anything sampling it.
-- No temporal anti-aliasing: there are no motion vectors in this build, so thin
-  crest edges and spray still shimmer at high resolution. This is the largest
-  remaining gap against the brief.
+- Temporal anti-aliasing is browser-side presentation logic. The Ultra tier
+  uses reprojection and Cinematic adds jittered supersampling; both rely on
+  motion vectors for the ocean, sky, spray, bubbles and suspended particles.
+  Rebuild that pipeline natively in Unreal rather than expecting it in JSON.
 - Breaking crests deform and throw forward but do not enclose a barrel.
 - Whitewater is shaded per fragment from the breaking state; it is not advected
   as a field with its own lifetime.

@@ -176,6 +176,8 @@ export class OceanMaterial {
   }
 
   dispose() {
-    if (this.material) { this.material.dispose(true, true); this.material = null; }
+    // Displacement, reflection and disturbance textures are owned by other
+    // subsystems. A ShaderMaterial must never force-dispose its bound samplers.
+    if (this.material) { this.material.dispose(true, false); this.material = null; }
   }
 }

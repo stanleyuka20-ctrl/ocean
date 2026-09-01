@@ -58,6 +58,7 @@ export class TouchControls {
     document.body.classList.add("touch-on");
     this._detachMouse();
     this._syncHint();
+    this.updateDiveState();
   }
 
   hide() {
@@ -67,12 +68,7 @@ export class TouchControls {
     this.root.classList.add("hidden");
     this.root.setAttribute("aria-hidden", "true");
     document.body.classList.remove("touch-on");
-    this._resetStick();
-    this._joyPtr = -1;
-    this._lookPtr = -1;
-    this.ctrl.riseHold = false;
-    this.ctrl.downHold = false;
-    this.ctrl.sprintHold = false;
+    this._releaseAllInputs();
     if (this.hint) this.hint.classList.add("hidden");
     this._attachMouse();
   }
@@ -87,6 +83,32 @@ export class TouchControls {
     this.ctrl.touchStickX = 0;
     this.ctrl.touchStickY = 0;
     if (this.knob) this.knob.style.transform = "translate(-50%,-50%)";
+  }
+
+  _releaseAllInputs() {
+    this._resetStick();
+    this._joyPtr = -1;
+    this._lookPtr = -1;
+    this.ctrl.touchLookX = 0;
+    this.ctrl.touchLookY = 0;
+    this.ctrl.riseHold = false;
+    this.ctrl.downHold = false;
+    this.ctrl.sprintHold = false;
+    if (this.root) this.root.querySelectorAll(".touch-btn.on").forEach((b) => b.classList.remove("on"));
+  }
+
+  updateDiveState() {
+    if (!this.root || !this.app.ocean) return;
+    const button = this.root.querySelector('[data-act="dive"]');
+    if (!button) return;
+    const c = this.ctrl.camera.position;
+    const h = this.app.ocean.getHeight(c.x, c.z);
+    const underwater = c.y < h;
+    const label = button.querySelector("[data-label]");
+    if (label) label.textContent = underwater ? "Surface" : "Dive";
+    const icon = button.querySelector("span:first-child");
+    if (icon) icon.textContent = underwater ? "↑" : "↓";
+    button.setAttribute("aria-label", underwater ? "Return above the surface" : "Dive below the surface");
   }
 
   _detachMouse() {
@@ -122,7 +144,7 @@ export class TouchControls {
     this.root.addEventListener("touchmove", prevent, { passive: false });
     canvas.addEventListener("touchmove", prevent, { passive: false });
     canvas.addEventListener("wheel", prevent, { passive: false });
-    window.addEventListener("gesturestart", prevent, { passive: false });
+    canvas.addEventListener("gesturestart", prevent, { passive: false });
     document.addEventListener("contextmenu", (e) => {
       if (this.visible) e.preventDefault();
     });
@@ -135,20 +157,18 @@ export class TouchControls {
 
     btns.forEach((el) => {
       const act = el.getAttribute("data-act");
+      const discrete = act === "dive" || act === "view" || act === "panel";
       const down = (e) => {
         this._noteTouch();
         this.show();
-        e.preventDefault();
+        if (!discrete) e.preventDefault();
         e.stopPropagation();
         el.classList.add("on");
         try { el.setPointerCapture(e.pointerId); } catch (err) { /* ok */ }
         setHold(act, true);
-        if ((act === "dive" || act === "view" || act === "panel") && this._onAction) {
-          this._onAction(act);
-        }
       };
       const up = (e) => {
-        e.preventDefault();
+        if (!discrete) e.preventDefault();
         e.stopPropagation();
         el.classList.remove("on");
         setHold(act, false);
@@ -156,6 +176,28 @@ export class TouchControls {
       el.addEventListener("pointerdown", down);
       el.addEventListener("pointerup", up);
       el.addEventListener("pointercancel", up);
+      el.addEventListener("lostpointercapture", up);
+      el.addEventListener("keydown", (e) => {
+        if (discrete || (e.code !== "Space" && e.code !== "Enter")) return;
+        e.preventDefault();
+        el.classList.add("on");
+        setHold(act, true);
+      });
+      el.addEventListener("keyup", (e) => {
+        if (discrete || (e.code !== "Space" && e.code !== "Enter")) return;
+        el.classList.remove("on");
+        setHold(act, false);
+      });
+      if (discrete) {
+        el.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this._noteTouch();
+          this.show();
+          if (this._onAction) this._onAction(act);
+          this.updateDiveState();
+        });
+      }
     });
 
     const joyDown = (e) => {
@@ -185,27 +227,11 @@ export class TouchControls {
     joy.addEventListener("pointermove", joyMove);
     joy.addEventListener("pointerup", joyUp);
     joy.addEventListener("pointercancel", joyUp);
+    joy.addEventListener("lostpointercapture", joyUp);
 
     const lookDown = (e) => {
       if (e.pointerType === "mouse" && e.button !== 0) return;
       if (e.target.closest && e.target.closest("#touch, #panel, #help, #boot")) return;
-      const leftZone = e.clientX < window.innerWidth * 0.42
-        && e.clientY > window.innerHeight * 0.32;
-      if (leftZone && (e.pointerType === "touch" || e.pointerType === "pen")) {
-        if (this._joyPtr === -1) {
-          this.show();
-          this._noteTouch();
-          e.preventDefault();
-          this._joyPtr = e.pointerId;
-          const r = this.joy.getBoundingClientRect();
-          this._joyOrigin.x = r.left + r.width * 0.5;
-          this._joyOrigin.y = r.top + r.height * 0.5;
-          this._radius = Math.min(r.width, r.height) * 0.38;
-          try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* ok */ }
-          this._joyMove(e);
-        }
-        return;
-      }
       if (this._lookPtr !== -1) return;
       if (e.pointerType === "mouse" && !this.visible) return;
       this._noteTouch();
@@ -239,6 +265,7 @@ export class TouchControls {
     window.addEventListener("pointermove", lookMove, { passive: false });
     window.addEventListener("pointerup", lookUp);
     window.addEventListener("pointercancel", lookUp);
+    canvas.addEventListener("lostpointercapture", lookUp);
 
     window.addEventListener("keydown", () => {
       if (this.forceOn) return;
@@ -250,8 +277,12 @@ export class TouchControls {
       if (e.movementX === 0 && e.movementY === 0) return;
       if (Date.now() - this._lastTouch > 800) this.hide();
     });
-    window.addEventListener("orientationchange", () => this._syncHint());
-    window.addEventListener("resize", () => this._syncHint());
+    const reset = () => this._releaseAllInputs();
+    window.addEventListener("blur", reset);
+    window.addEventListener("pagehide", reset);
+    document.addEventListener("visibilitychange", () => { if (document.hidden) reset(); });
+    window.addEventListener("orientationchange", () => { reset(); this._syncHint(); });
+    window.addEventListener("resize", () => { reset(); this._syncHint(); });
   }
 
   _noteTouch() { this._lastTouch = Date.now(); }

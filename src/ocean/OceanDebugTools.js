@@ -20,6 +20,9 @@ export class OceanDebugTools {
     this.ocean = ocean;
     this.channel = 0;
     this.showWire = false;
+    this._hsGrid = null;
+    this._hsTime = NaN;
+    this._hsValue = 0;
   }
 
   setChannel(i) {
@@ -45,8 +48,10 @@ export class OceanDebugTools {
       texel: o.sim.texelSizes.map((v) => v.toFixed(2) + " m").join(" / "),
       clipmap: `${lod.levels} levels, ${(lod.triangles / 1000).toFixed(0)}k tris, ` +
                `${(lod.extent / 1000).toFixed(0)} km`,
-      reflection: o.reflection.enabled ? o.reflection.quality : "env only",
-      refraction: o.refraction.enabled ? o.refraction.quality : "off",
+      reflection: o.reflection.enabled && o.reflection.subsystemEnabled !== false
+        ? o.reflection.quality : "env only",
+      refraction: o.refraction.enabled && o.refraction.subsystemEnabled !== false
+        ? o.refraction.quality : "off",
       windSpeed: o.sim.params.windSpeed.toFixed(1) + " m/s",
       hs: this.significantWaveHeight().toFixed(2) + " m",
       exposure: o.sky.exposure.toFixed(2),
@@ -60,12 +65,25 @@ export class OceanDebugTools {
   significantWaveHeight() {
     const b = this.ocean.buoyancy;
     if (!b || !b.grids) return 0;
-    let sum = 0, n = 0;
+    if (this._hsGrid === b.grids && this._hsTime === b.gridTime) return this._hsValue;
+    let variance = 0;
     for (const l of b.layout) {
       const sub = b.grids.subarray(l.offset, l.offset + l.N * l.N * 6);
-      for (let i = 0; i < l.N * l.N; i++) { const h = sub[i * 6 + 1]; sum += h * h; n++; }
+      let sum = 0;
+      const n = l.N * l.N;
+      for (let i = 0; i < n; i++) {
+        const h = sub[i * 6 + 1];
+        sum += h * h;
+      }
+      // The cascades are independent spectral bands. Their variances add;
+      // averaging all their samples together would divide the sea energy by
+      // the number of cascades and systematically under-report Hs.
+      if (n) variance += sum / n;
     }
-    return n ? 4.0 * Math.sqrt(sum / n) : 0;
+    this._hsGrid = b.grids;
+    this._hsTime = b.gridTime;
+    this._hsValue = 4.0 * Math.sqrt(Math.max(variance, 0));
+    return this._hsValue;
   }
 
   /** Compare the CPU mirror against the GPU field.  Returns a report. */
@@ -75,7 +93,7 @@ export class OceanDebugTools {
     const N = cs.N;
     let raw;
     try {
-      raw = await cs.disp.readPixels();
+      raw = await cs.disp[cs.dispIdx].readPixels();
     } catch (e) {
       return { ok: false, error: "readPixels unavailable: " + e.message };
     }
@@ -99,13 +117,15 @@ export class OceanDebugTools {
       sum += e; n++;
     }
     const hs = this.significantWaveHeight();
+    const meanAbsError = n ? sum / n : Infinity;
+    const relative = hs > 0 ? meanAbsError / hs : meanAbsError;
     return {
-      ok: true,
-      meanAbsError: sum / n,
+      ok: Number.isFinite(relative) && relative < 0.35,
+      meanAbsError,
       maxAbsError: maxErr,
       significantWaveHeight: hs,
       // the CPU field is band limited, so a fraction of Hs is expected
-      relative: hs > 0 ? (sum / n) / hs : 0,
+      relative,
       note: "CPU mirror is low-pass filtered; error should be a fraction of Hs",
     };
   }

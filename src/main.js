@@ -7,7 +7,7 @@
 //  keep in sync.
 // ---------------------------------------------------------------------------
 
-import { TIERS, TIER_ORDER, autoTier, isMobileDevice } from "./core/quality.js";
+import { TIERS, autoTier, isMobileDevice } from "./core/quality.js";
 import { Sky } from "./core/Sky.js";
 import { OceanSystem } from "./ocean/OceanSystem.js";
 import { OceanPresentation } from "./core/Presentation.js";
@@ -23,9 +23,37 @@ const BJ = () => window.BABYLON;
 const boot = document.getElementById("boot");
 const bootBar = document.getElementById("bootBar");
 const bootStatus = document.getElementById("bootStatus");
+const bootProgress = document.getElementById("bootProgress");
 function progress(p, msg) {
-  bootBar.style.width = Math.round(p * 100) + "%";
+  const percent = Math.round(Math.max(0, Math.min(1, p)) * 100);
+  bootBar.style.width = percent + "%";
+  if (bootProgress) bootProgress.setAttribute("aria-valuenow", String(percent));
   if (msg) bootStatus.textContent = msg;
+}
+
+function isInteractiveTarget(target) {
+  return !!(target && target.closest &&
+    target.closest("button,input,select,textarea,a,[contenteditable='true'],[role='dialog']"));
+}
+
+function showBootFailure(error) {
+  const message = error && error.message ? error.message : String(error);
+  boot.classList.add("failed");
+  bootStatus.textContent = `Abyssal couldn’t start: ${message}. Reload the page or try compatibility mode.`;
+  bootStatus.style.color = "#ffaca8";
+  bootStatus.setAttribute("role", "alert");
+  const actions = document.getElementById("bootActions");
+  if (actions) actions.classList.remove("hidden");
+}
+
+document.getElementById("bootRetry").addEventListener("click", () => location.reload());
+document.getElementById("bootCompatibility").addEventListener("click", () => {
+  const url = new URL(location.href);
+  url.searchParams.set("webgl", "1");
+  location.assign(url.href);
+});
+if (new URLSearchParams(location.search).get("webgl") === "1") {
+  document.getElementById("bootCompatibility").classList.add("hidden");
 }
 
 class App {
@@ -39,23 +67,32 @@ class App {
     this.timeLerp = null;
     this._loopOn = false;
     this.showHud = true;
+    this.reduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    this._announceTimer = 0;
+    this._shellBound = false;
+    this._helpReturnFocus = null;
   }
 
   async init() {
     const B = BJ();
-    progress(0.05, "creating renderer...");
+    if (!B) throw new Error("Babylon.js could not load — check the network or content blocker");
+    progress(0.05, "Starting graphics…");
 
     let engine = null;
     const params = new URLSearchParams(location.search);
     const forceGL = params.get("webgl") === "1";
-    if (!forceGL && navigator.gpu && B.WebGPUEngine && await B.WebGPUEngine.IsSupportedAsync) {
+    if (!forceGL && navigator.gpu && B.WebGPUEngine) {
       try {
-        engine = new B.WebGPUEngine(this.canvas, {
-          antialias: false, stencil: false, powerPreference: "high-performance",
-        });
-        await engine.initAsync();
+        const supported = await B.WebGPUEngine.IsSupportedAsync;
+        if (supported) {
+          engine = new B.WebGPUEngine(this.canvas, {
+            antialias: false, stencil: false, powerPreference: "high-performance",
+          });
+          await engine.initAsync();
+        }
       } catch (e) {
         console.warn("[ocean] WebGPU init failed, falling back to WebGL2:", e);
+        progress(0.08, "WebGPU unavailable. Continuing with WebGL 2…");
         engine = null;
       }
     }
@@ -65,8 +102,7 @@ class App {
         powerPreference: "high-performance", antialias: false,
       }, false);
       if (engine.webGLVersion === 1) {
-        bootStatus.textContent = "WebGL2 is required.";
-        throw new Error("WebGL2 required");
+        throw new Error("WebGL 2 is required; try the latest Chrome or Edge with hardware acceleration enabled");
       }
     }
     this.engine = engine;
@@ -97,7 +133,7 @@ class App {
     this.present.applyNow();
     window.__present = this.present;
 
-    progress(0.15, `scene (${engine.isWebGPU ? "WebGPU" : "WebGL2"}, ${tier.label})...`);
+    progress(0.15, `Preparing scene — ${engine.isWebGPU ? "WebGPU" : "WebGL 2"} · ${tier.label}…`);
     const scene = new B.Scene(engine);
     scene.clearColor = new B.Color4(0.02, 0.04, 0.06, 1);
     scene.autoClear = true;
@@ -107,11 +143,14 @@ class App {
 
     this.camera = new CameraController(scene, engine, this.canvas);
 
-    progress(0.25, "atmosphere...");
+    progress(0.25, "Building atmosphere…");
     this.sky = new Sky(scene, tier);
     this.sky.build();
+    // Full-frame double flashes are opt-in. Reduced-motion users never receive
+    // them, including when a storm preset is selected before Controls opens.
+    this.sky.lightningEnabled = !this.reduceMotion && params.get("lightning") === "1";
 
-    progress(0.35, "spectral ocean...");
+    progress(0.35, "Generating ocean waves…");
     // ocean only: no bathymetry, no shoreline module
     this.ocean = new OceanSystem(engine, scene, this.camera.camera, this.sky, tierName,
       { shoreline: false });
@@ -121,16 +160,14 @@ class App {
     // ---------------------------------------------------------------------
     //  OCEAN ONLY.
     //
-    //  There is no island, sea floor, pier, boat, prop or character: the scene
-    //  is the water, the sky that lights it and the camera looking at it.  The
-    //  ocean therefore has to stand on its own -- no bathymetry, nothing in the
-    //  reflection or refraction lists -- which is the point of section 3 of the
-    //  brief and the reason the shoreline is now an optional module rather
-    //  than a dependency.
+    //  There is no island, pier, boat, prop or character: the scene is the
+    //  water, the sky that lights it and a procedural camera-following sea bed
+    //  visible only while diving. The surface therefore has to stand on its
+    //  own -- no coastline or bathymetry -- and the shoreline stays optional.
     // ---------------------------------------------------------------------
     this.ocean.setSceneObjects({ reflect: [], refract: [], surfaceMaterials: [] });
 
-    progress(0.85, "post processing...");
+    progress(0.85, "Adding visual effects…");
     this._buildPipeline(tier);
 
     // particles must land after the opaque groups or the water hides them
@@ -155,25 +192,26 @@ class App {
     this.touch = new TouchControls(this);
     const onAct = (act) => {
       if (act === "dive") this._diveToggle();
-      if (act === "view") { this.camera.cyclePreset(this._hooks()); this.panel.refresh(); }
+      if (act === "view") this.cycleCameraView();
       if (act === "panel") this.panel.toggle();
     };
     this.touch.onAction(onAct);
     this.camera.onPadAction = onAct;
 
-    this.ocean.weather.applyPreset("clearAtlantic", { instant: true });
-    this.ocean.setWaterType(WEATHER_PRESETS.clearAtlantic.water, true);
+    this.applyEnvironmentPreset("clearAtlantic", { instant: true, silent: true });
     this.camera.mode = "free";
     this.camera.applyPreset(0, this._hooks());
 
+    this._bindShell();
     this._bindKeys();
     window.addEventListener("resize", () => {
       engine.resize();
       this.present.apply();
+      this.invalidateReady();
     });
     document.addEventListener("visibilitychange", () => this._syncLoop());
 
-    progress(0.95, "compiling shaders...");
+    progress(0.95, "Finishing setup…");
     // let the first frames build every effect before we show anything
     let warm = 0;
     // A resize destroys the swapchain texture, so skip the frame that does it:
@@ -182,7 +220,7 @@ class App {
     await new Promise((res) => {
       const t = setInterval(() => {
         warm++;
-        progress(Math.min(0.99, 0.95 + warm * 0.0025), "compiling shaders...");
+        progress(Math.min(0.99, 0.95 + warm * 0.0025), "Finishing setup…");
         if (warm > 400 || this.allMaterialsReady()) { clearInterval(t); res(); }
       }, 60);
     });
@@ -191,7 +229,11 @@ class App {
     if (this.showHud) document.getElementById("hud").classList.remove("hidden");
     document.getElementById("hudBackend").textContent =
       `${engine.isWebGPU ? "WebGPU" : "WebGL2"} · ${tier.label}`;
+    document.getElementById("brandMark").classList.remove("hidden");
+    document.getElementById("quickActions").classList.remove("hidden");
+    this._showOnboarding();
     boot.classList.add("gone");
+    boot.setAttribute("aria-hidden", "true");
     setTimeout(() => boot.remove(), 900);
     window.__booted = true;
     if (!lockres && dynParam !== "0"
@@ -225,14 +267,148 @@ class App {
     this.pipeline = p;
   }
 
+  _bindShell() {
+    if (this._shellBound) return;
+    this._shellBound = true;
+    const help = document.getElementById("help");
+    const quickHelp = document.getElementById("quickHelp");
+    document.getElementById("quickView").addEventListener("click", () => this.cycleCameraView());
+    document.getElementById("quickPanel").addEventListener("click", () => this.panel.toggle());
+    quickHelp.addEventListener("click", () => this.setHelpOpen(help.classList.contains("hidden")));
+    document.getElementById("helpClose").addEventListener("click", () => this.setHelpOpen(false));
+    document.getElementById("onboardControls").addEventListener("click", () => {
+      this._dismissOnboarding();
+      this.panel.toggle(true);
+    });
+    document.getElementById("onboardDismiss").addEventListener("click", () => this._dismissOnboarding());
+    help.addEventListener("keydown", (e) => {
+      if (e.key !== "Tab") return;
+      const focusable = [...help.querySelectorAll(
+        'button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])')];
+      if (!focusable.length) return;
+      const first = focusable[0], last = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    });
+  }
+
+  _showOnboarding() {
+    const card = document.getElementById("onboard");
+    const copy = document.getElementById("onboardCopy");
+    if (!card || !copy) return;
+    if (this.touch && this.touch.visible) {
+      copy.innerHTML = "Drag the open water to look. Use the <strong>left stick</strong> to move, <strong>Next view</strong> for a new vantage point, or open Controls to shape the sea.";
+    }
+    card.classList.remove("hidden");
+    clearTimeout(this._onboardTimer);
+    this._onboardTimer = setTimeout(() => this._dismissOnboarding(), 13000);
+  }
+
+  _dismissOnboarding() {
+    clearTimeout(this._onboardTimer);
+    const card = document.getElementById("onboard");
+    if (card) card.classList.add("hidden");
+  }
+
+  announce(message) {
+    const status = document.getElementById("sceneStatus");
+    if (!status || !message) return;
+    status.textContent = message;
+    status.classList.remove("hidden");
+    clearTimeout(this._announceTimer);
+    this._announceTimer = setTimeout(() => status.classList.add("hidden"), 2200);
+  }
+
+  setHelpOpen(open) {
+    const help = document.getElementById("help");
+    if (!help) return false;
+    const wasOpen = !help.classList.contains("hidden");
+    const next = !!open;
+    if (next === wasOpen) return next;
+    if (next) {
+      if (this.panel && this.panel.visible) this.panel.toggle(false);
+      this._helpReturnFocus = document.activeElement;
+      if (document.pointerLockElement && document.exitPointerLock) document.exitPointerLock();
+      this._dismissOnboarding();
+    }
+    help.classList.toggle("hidden", !next);
+    help.setAttribute("aria-hidden", String(!next));
+    document.querySelectorAll('[aria-controls="help"]').forEach((button) => {
+      button.setAttribute("aria-expanded", String(next));
+    });
+    if (next) {
+      setTimeout(() => document.getElementById("helpClose").focus(), 0);
+    } else if (this._helpReturnFocus && this._helpReturnFocus.focus) {
+      const el = this._helpReturnFocus;
+      this._helpReturnFocus = null;
+      setTimeout(() => el.focus(), 0);
+    }
+    return next;
+  }
+
+  setLightning(on, silent = false) {
+    const enabled = !!on && !this.reduceMotion;
+    this.sky.lightningEnabled = enabled;
+    if (!enabled) {
+      this.sky.flash = 0;
+      this.sky._flashSeq = 0;
+    }
+    if (!silent) this.announce(enabled ? "Lightning flashes enabled" : "Lightning flashes off");
+    return enabled;
+  }
+
+  applyEnvironmentPreset(key, opts = {}) {
+    const p = WEATHER_PRESETS[key];
+    if (!p) return false;
+    const instant = !!opts.instant;
+    this.ocean.weather.applyPreset(key, { instant, time: false });
+    this.ocean.setWaterType(p.water, instant, { fromPreset: true });
+    if (p.timeOfDay !== undefined) {
+      if (instant) {
+        this.sky.timeOfDay = p.timeOfDay;
+        this.timeLerp = null;
+      } else {
+        this.setTime(p.timeOfDay);
+      }
+    }
+    this.invalidateReady();
+    if (this.panel) this.panel.refresh();
+    if (!opts.silent) this.announce(`Weather: ${p.label}`);
+    return true;
+  }
+
+  applySeaState(key, opts = {}) {
+    const state = SEA_STATES[key];
+    if (!state) return false;
+    this.ocean.weather.applySeaState(key, { instant: !!opts.instant });
+    this.invalidateReady();
+    if (this.panel) this.panel.refresh();
+    if (!opts.silent) this.announce(`Sea state: ${state.label}`);
+    return true;
+  }
+
+  applyCameraPreset(i) {
+    const p = this.camera.applyPreset(i, this._hooks());
+    if (this.taa) this.taa.reset();
+    if (this.touch) this.touch.updateDiveState();
+    if (this.panel) this.panel.refresh();
+    this.invalidateReady();
+    this.announce(`${p.weather ? "Scene" : "View"}: ${p.label}`);
+    return p;
+  }
+
+  cycleCameraView() { return this.applyCameraPreset(this.camera.presetIndex + 1); }
+
   _hooks() {
     const s = this.sky.sunDir;
     return {
       get: () => null,
-      weather: (k) => {
-        this.ocean.weather.applyPreset(k);
-        this.ocean.setWaterType(WEATHER_PRESETS[k].water);
-      },
+      weather: (k) => this.applyEnvironmentPreset(k, { silent: true }),
       sunYaw: Math.atan2(s.x, s.z),
     };
   }
@@ -241,12 +417,13 @@ class App {
   _bindKeys() {
     window.addEventListener("keydown", (e) => {
       if (e.repeat) return;
+      if (isInteractiveTarget(e.target) && e.code !== "Escape") return;
       const o = this.ocean;
       switch (e.code) {
-        case "Digit1": o.weather.applySeaState("calm"); break;
-        case "Digit2": o.weather.applySeaState("moderate"); break;
-        case "Digit3": o.weather.applySeaState("rough"); break;
-        case "Digit4": o.weather.applySeaState("storm"); break;
+        case "Digit1": this.applySeaState("calm"); break;
+        case "Digit2": this.applySeaState("moderate"); break;
+        case "Digit3": this.applySeaState("rough"); break;
+        case "Digit4": this.applySeaState("storm"); break;
         case "Digit5": this._preset("calmTropical"); break;
         case "Digit6": this._preset("overcast"); break;
         case "Digit7": this._preset("heavyRain"); break;
@@ -261,17 +438,30 @@ class App {
           this.setTime(next);
           break;
         }
-        case "KeyY": this.sky.timeSpeed = this.sky.timeSpeed > 0 ? 0 : 0.35; break;
+        case "KeyY":
+          this.sky.timeSpeed = this.sky.timeSpeed > 0 ? 0 : 0.35;
+          this.announce(this.sky.timeSpeed > 0 ? "Time animation on" : "Time animation paused");
+          break;
         case "KeyU": this._diveToggle(); break;
         case "KeyF": o.debug.setChannel(o.debug.channel === 4 ? 0 : 4); this.panel.refresh(); break;
         case "KeyL": o.debug.setChannel(o.debug.channel === 6 ? 0 : 6); this.panel.refresh(); break;
         case "KeyG": o.debug.cycle(); this.panel.refresh(); break;
-        case "KeyC": this.camera.cyclePreset(this._hooks()); this.panel.refresh(); break;
+        case "KeyC": this.cycleCameraView(); break;
         case "KeyH": this.panel.toggle(); break;
-        case "KeyP": o.sim.paused = !o.sim.paused; this.panel.refresh(); break;
-        case "Escape": document.getElementById("help").classList.add("hidden"); break;
+        case "KeyP":
+          o.sim.paused = !o.sim.paused;
+          this.panel.refresh();
+          this.announce(o.sim.paused ? "Wave animation paused" : "Wave animation resumed");
+          break;
+        case "Escape":
+          if (!document.getElementById("help").classList.contains("hidden")) this.setHelpOpen(false);
+          else if (this.panel.visible) this.panel.toggle(false);
+          break;
         case "Slash":
-          if (e.shiftKey) document.getElementById("help").classList.toggle("hidden");
+          if (e.shiftKey) {
+            e.preventDefault();
+            this.setHelpOpen(document.getElementById("help").classList.contains("hidden"));
+          }
           break;
         default: break;
       }
@@ -279,10 +469,7 @@ class App {
   }
 
   _preset(k) {
-    this.ocean.spray.flush();
-    this.ocean.weather.applyPreset(k);
-    this.ocean.setWaterType(WEATHER_PRESETS[k].water);
-    this.panel.refresh();
+    return this.applyEnvironmentPreset(k);
   }
 
   setTime(t) {
@@ -290,25 +477,37 @@ class App {
   }
 
   setQuality(name) {
-    if (!TIERS[name]) return;
+    if (!TIERS[name] || name === this.tierName) return false;
+    this.invalidateReady();
+    this.announce(`Rebuilding ${TIERS[name].label} quality…`);
+    const panelRoot = document.getElementById("panel");
+    if (panelRoot) panelRoot.setAttribute("aria-busy", "true");
     const o = this.ocean;
     o.setQuality(name);
+    if (this.sky.setTier) this.sky.setTier(TIERS[name]);
     this.tierName = name;
     if (this.present) {
       this.present.targetFrameRate = TIERS[name].targetFrameRate || 60;
       if (TIERS[name].maxPixels) this.present.maxPixels = TIERS[name].maxPixels;
       this.present.apply();
     }
-    o.setSceneObjects({
-      reflect: [], refract: [],
-    });
     for (const p of [...(o.spray.all || []), o.underwater.motes]) if (p) p.renderingGroupId = 2;
-    if (this.pipeline) { this.pipeline.dispose(); this.pipeline = null; }
-    this._buildPipeline(TIERS[name]);
+    if (this.pipeline) {
+      // The pipeline is already in the correct camera post-process order.
+      // Recreating it here would move tone mapping after TAA and underwater.
+      this.pipeline.bloomEnabled = TIERS[name].bloom;
+      this.pipeline.fxaaEnabled = TIERS[name].fxaa && !TIERS[name].taa;
+    } else {
+      this._buildPipeline(TIERS[name]);
+    }
+    if (this.taa && this.taa.rebindOceanResources) this.taa.rebindOceanResources();
     this._applyTaa(name);
     document.getElementById("hudBackend").textContent =
       `${this.engine.isWebGPU ? "WebGPU" : "WebGL2"} · ${TIERS[name].label}`;
     this.panel.build();
+    if (panelRoot) panelRoot.setAttribute("aria-busy", "false");
+    this.announce(`Quality: ${TIERS[name].label}`);
+    return true;
   }
 
   /**
@@ -325,14 +524,16 @@ class App {
     }
   }
 
-  applyCameraPreset(i) { this.camera.applyPreset(i, this._hooks()); this.panel.refresh(); }
-
   _diveToggle() {
     const c = this.camera.camera;
     const h = this.ocean.getHeight(c.position.x, c.position.z);
     if (c.position.y > h) c.position.y = h - 3.2;
     else c.position.y = h + 2.2;
     this.camera.followTarget = null;
+    if (this.taa) this.taa.reset();
+    if (this.touch) this.touch.updateDiveState();
+    this.invalidateReady();
+    this.announce(c.position.y < h ? "Descended below the surface" : "Returned above the surface");
   }
 
   // -------------------------------------------------------------------------
@@ -423,8 +624,21 @@ class App {
 
   _tick() {
     if (this.paused) return;
-    if (this.present.applyNow()) return;
+    if (this.present.applyNow()) {
+      this._syncOffscreenTargets();
+      return;
+    }
     this._frame();
+  }
+
+  _syncOffscreenTargets() {
+    if (!this.ocean) return;
+    if (this.ocean.reflection && this.ocean.reflection.resizeIfNeeded) {
+      this.ocean.reflection.resizeIfNeeded();
+    }
+    if (this.ocean.refraction && this.ocean.refraction.resizeIfNeeded) {
+      this.ocean.refraction.resizeIfNeeded();
+    }
   }
 
   _startLoop() {
@@ -473,8 +687,12 @@ class App {
       // setting reported 3840.  This path only drops quality features now.
     } else if (fps > 58) {
       const ri = rQ.indexOf(o.reflection.quality);
-      const target = TIERS[this.tierName].mirror > 0.85 ? 4 : TIERS[this.tierName].mirror > 0.6 ? 3 : 2;
-      if (ri < target && ri > 0) o.reflection.setQuality(rQ[ri + 1]);
+      const fi = fQ.indexOf(o.refraction.quality);
+      const tier = TIERS[this.tierName];
+      const mirrorTarget = tier.mirror > 0.85 ? 4 : tier.mirror > 0.6 ? 3 : tier.mirror > 0 ? 2 : 0;
+      const refractTarget = tier.refract > 0.65 ? 3 : tier.refract > 0.45 ? 2 : tier.refract > 0 ? 1 : 0;
+      if (ri < mirrorTarget && ri > 0) { o.reflection.setQuality(rQ[ri + 1]); return; }
+      if (fi < refractTarget && fi > 0) o.refraction.setQuality(fQ[fi + 1]);
     }
   }
 
@@ -486,24 +704,24 @@ class App {
     const c = this.camera.camera.position;
     document.getElementById("hudFps").textContent = this.engine.getFps().toFixed(0);
     document.getElementById("hudMs").textContent =
-      ` · ${(1000 / Math.max(this.engine.getFps(), 1)).toFixed(1)} ms`;
+      ` · ${(1000 / Math.max(this.engine.getFps(), 1)).toFixed(1)} ms/frame`;
     const hh = Math.floor(this.sky.timeOfDay);
     const mm = Math.floor((this.sky.timeOfDay - hh) * 60);
     document.getElementById("hudState").textContent =
       `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")} · ` +
-      `wind ${o.weather.windSpeed.toFixed(1)} m/s · Hs ${o.debug.significantWaveHeight().toFixed(2)} m` +
-      (o.underwater.submerged ? " · submerged" : "");
+      `Wind ${o.weather.windSpeed.toFixed(1)} m/s · Wave height ${o.debug.significantWaveHeight().toFixed(2)} m` +
+      (o.underwater.submerged ? " · Underwater" : "");
     const floor = (o.seafloor && o.seafloor.enabled) ? o.seafloor.depth
       : o.buoyancy.getSurfaceData(c, this._sd || (this._sd = {})).depth;
     const sub = Math.max(0, o.seaLevel - c.y);
     document.getElementById("hudPos").textContent =
-      `x ${c.x.toFixed(0)}  y ${c.y.toFixed(1)}  z ${c.z.toFixed(0)}  ·  ` +
-      `depth ${sub.toFixed(0)} m  floor ${floor.toFixed(0)} m`;
+      `Position ${c.x.toFixed(0)}, ${c.y.toFixed(1)}, ${c.z.toFixed(0)} · ` +
+      `Camera depth ${sub.toFixed(0)} m · Water depth ${floor.toFixed(0)} m`;
     const perf = document.getElementById("hudPerf");
     if (perf && this.present) {
       const st = this.present.stats();
-      perf.textContent = `${st.output} · ×${st.renderScale} · dpr ${st.devicePixelRatio}`
-        + (st.dynamicResolution ? " · dynres" : "");
+      perf.textContent = `Output ${st.output} · Render ${st.renderScale}× · Device ${st.devicePixelRatio}×`
+        + (st.dynamicResolution ? " · Auto resolution" : "");
     }
     const hud = document.getElementById("hud");
     if (hud) hud.classList.toggle("hidden", !this.showHud);
@@ -528,7 +746,12 @@ function exposeApi(app) {
     app.camera.camera.rotation.set((pitchDeg || 0) * Math.PI / 180, (yawDeg || 0) * Math.PI / 180, 0);
   };
   window.__setPreset = (k) => { app.invalidateReady(); app._preset(k); };
-  window.__setSea = (k) => { app.invalidateReady(); o.spray.flush(); o.weather.applySeaState(k, { instant: true }); };
+  window.__setSea = (k) => {
+    app.invalidateReady();
+    if (!SEA_STATES[k]) return false;
+    o.spray.flush();
+    return app.applySeaState(k, { instant: true, silent: true });
+  };
   window.__setTime = (t) => { app.invalidateReady(); app.sky.timeOfDay = t; app.timeLerp = null; };
   window.__setWater = (k) => { app.invalidateReady(); o.setWaterType(k, true); };
   window.__setDebug = (i) => { app.invalidateReady(); o.debug.setChannel(i); };
@@ -729,9 +952,7 @@ function exposeApi(app) {
    */
   /** stop lightning (and clear any flash in progress) for measurement */
   window.__setLightning = (on) => {
-    app.sky.lightningEnabled = !!on;
-    if (!on) { app.sky.flash = 0; app.sky._flashSeq = 0; }
-    return app.sky.lightningEnabled;
+    return app.setLightning(on, true);
   };
   /**
    * Put the foam accumulator back to empty and re-fill it deterministically.
@@ -941,7 +1162,10 @@ function exposeApi(app) {
   window.__pauseRender = () => { app.paused = true; app._syncLoop(); };
   window.__resumeRender = () => { app.paused = false; app._syncLoop(); };
   window.__advance = (n) => {
-    const k = Math.max(1, n || 1);
+    const requested = n === undefined ? 1 : Number(n);
+    if (!Number.isFinite(requested)) throw new TypeError("__advance expects a finite frame count");
+    const k = Math.max(0, Math.min(10000, Math.floor(requested)));
+    if (k === 0) return 0;
     // Counted by the app's own frame counter, not by loop iterations.
     //
     // A frame can be consumed without rendering anything -- a backbuffer resize
@@ -962,9 +1186,16 @@ function exposeApi(app) {
   window.__stats = () => Object.assign({ fps: app.engine.getFps() },
     o.debug.stats(), { present: app.present.stats(), surf: o.breakers.stats });
   /** aim the backbuffer at a width in real pixels, e.g. __setOutput(3840) */
-  window.__setOutput = (px) => { app.invalidateReady(); return app.present.targetWidth(px); };
+  window.__setOutput = (px) => {
+    const value = Number(px);
+    if (!Number.isFinite(value)) throw new TypeError("__setOutput expects a finite width");
+    app.invalidateReady();
+    return app.present.targetWidth(Math.max(320, Math.min(7680, value)));
+  };
   window.__setRenderScale = (s) => {
-    app.invalidateReady(); app.present.renderScale = s; app.present.apply();
+    const value = Number(s);
+    if (!Number.isFinite(value)) throw new TypeError("__setRenderScale expects a finite scale");
+    app.invalidateReady(); app.present.renderScale = Math.max(0.25, Math.min(4, value)); app.present.apply();
     return app.present.stats();
   };
   window.__dynamicResolution = (v) => { app.present.dynamicResolution = !!v; };
@@ -991,11 +1222,15 @@ function exposeApi(app) {
       floor: o.seafloor && o.seafloor.enabled ? o.seafloor.depth : 0,
     };
   };
+  // Compatibility wrappers promised by the README and used by ladder.py.
+  window.__panel = (open) => app.panel.toggle(open);
+  window.__validate = (samples) => o.debug.validateBuoyancy(samples);
 }
 
+window.__booted = false;
+window.__ready = false;
 const app = new App();
 app.init().then(() => exposeApi(app)).catch((e) => {
   console.error(e);
-  bootStatus.textContent = "failed: " + (e && e.message ? e.message : e);
-  bootStatus.style.color = "#ff8080";
+  showBootFailure(e);
 });

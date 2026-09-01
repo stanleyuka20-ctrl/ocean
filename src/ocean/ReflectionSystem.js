@@ -42,25 +42,36 @@ export class ReflectionSystem {
     this._create();
   }
 
+  _dimensions() {
+    const width = this._size();
+    if (!width) return { width: 0, height: 0 };
+    return {
+      width,
+      height: Math.max(64, Math.round(width *
+        (this.engine.getRenderHeight() / Math.max(this.engine.getRenderWidth(), 1)))),
+    };
+  }
+
   _create() {
     const BJ = B();
     this.destroyTexture();
-    const size = this._size();
-    if (!size) { this.enabled = false; return; }
+    const size = this._dimensions();
+    // This pass reflects geometry only. In the ocean-only scene the list is
+    // intentionally empty, so allocating a full-screen mirror would spend a
+    // render pass every frame to clear transparent black.
+    if (!size.width || !this.renderList.length) { this.enabled = false; return; }
     this.enabled = true;
 
     // Sampled with SCREEN uv, so it must carry the screen's aspect -- a square
     // mirror read through screen coordinates misplaces every reflected pixel,
     // and the error grows with how far the window is from square.
-    const mh = Math.max(64, Math.round(size *
-      (this.engine.getRenderHeight() / Math.max(this.engine.getRenderWidth(), 1))));
-    const mt = new BJ.MirrorTexture("oceanMirror", { width: size, height: mh },
+    const mt = new BJ.MirrorTexture("oceanMirror", size,
       this.scene, true, BJ.Constants.TEXTURETYPE_HALF_FLOAT);
     mt.mirrorPlane = new BJ.Plane(0, -1, 0, this.seaLevel);
     mt.renderList = this.renderList.slice();
     mt.clearColor = new BJ.Color4(0, 0, 0, 0);
     mt.adaptiveBlurKernel = 0;
-    mt.refreshRate = 1;
+    mt.refreshRate = this.subsystemEnabled === false ? 0 : 1;
     mt.ignoreCameraViewport = true;
     mt.renderParticles = false;
     mt.renderSprites = false;
@@ -104,8 +115,18 @@ export class ReflectionSystem {
       if (!m.isEnabled()) continue;
       const p = m.getBoundingInfo ? m.getBoundingInfo().boundingSphere.centerWorld : m.position;
       const r = m.getBoundingInfo ? m.getBoundingInfo().boundingSphere.radiusWorld : 10;
-      if (BABYLON.Vector3.Distance(p, camera.globalPosition) - r < this.maxDistance) list.push(m);
+      if (B().Vector3.Distance(p, camera.globalPosition) - r < this.maxDistance) list.push(m);
     }
+  }
+
+  resizeIfNeeded() {
+    const want = this._dimensions();
+    if (!this.texture) {
+      if (want.width && this.renderList.length) this._create();
+      return;
+    }
+    const have = this.texture.getSize();
+    if (have.width !== want.width || have.height !== want.height) this._create();
   }
 
   destroyTexture() {
@@ -115,6 +136,7 @@ export class ReflectionSystem {
       this.texture.dispose();
       this.texture = null;
     }
+    this.enabled = false;
   }
   dispose() { this.destroyTexture(); }
   /**
@@ -123,7 +145,11 @@ export class ReflectionSystem {
    * rows identical to the baseline and looks like a diffuse cause, which is
    * exactly what happened here once already.
    */
-  setEnabled(v) { this.subsystemEnabled = !!v; return this.subsystemEnabled; }
+  setEnabled(v) {
+    this.subsystemEnabled = !!v;
+    if (this.texture) this.texture.refreshRate = this.subsystemEnabled ? 1 : 0;
+    return this.subsystemEnabled;
+  }
   subsystemStats() {
     return { enabled: this.subsystemEnabled !== false,
              updates: this.updateCount || 0 };

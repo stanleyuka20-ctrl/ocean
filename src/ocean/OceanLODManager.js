@@ -86,6 +86,11 @@ export class OceanLODManager {
   }
 
   dispose() {
-    if (this.mesh) { this.mesh.dispose(false, true); this.mesh = null; }
+    // OceanMaterial owns the shader; this object owns geometry only.
+    if (this.mesh) {
+      this.mesh.material = null;
+      this.mesh.dispose(false, false);
+      this.mesh = null;
+    }
   }
 }
