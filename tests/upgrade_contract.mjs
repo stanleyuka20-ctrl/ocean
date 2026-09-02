@@ -12,6 +12,7 @@ const main = read("src/main.js");
 const oceanSystem = read("src/ocean/OceanSystem.js");
 const particles = read("src/shaders/particles.js");
 const refraction = read("src/ocean/RefractionSystem.js");
+const underwater = read("src/ocean/UnderwaterSystem.js");
 
 const checks = [];
 async function check(name, fn) {
@@ -85,6 +86,69 @@ await check("bubble integration and refraction enable hook", () => {
   assert.match(bubbleBranch, /p\.y > surf/);
   assert.doesNotMatch(refraction, /this\.rt\b/);
   assert.match(refraction, /this\.texture\.refreshRate/);
+});
+
+await check("WebGPU receives complete dry-frame post-process bindings", async () => {
+  assert.doesNotMatch(underwater, /if\s*\(!needPost\)\s*return/);
+  assert.match(underwater, /effect\.setTexture\("uUwDeriv",\s*self\.derivTex\)/);
+
+  const previousWindow = globalThis.window;
+  const v = {
+    x: 0, y: 1, z: 0,
+    add() { return this; },
+    scale() { return this; },
+  };
+  globalThis.window = {
+    BABYLON: {
+      Axis: { X: 0, Y: 1, Z: 2 },
+      Vector3: { TransformCoordinates: () => ({ x: 0, y: 0 }) },
+    },
+  };
+  try {
+    const { UnderwaterSystem } = await import(
+      pathToFileURL(path.join(root, "src/ocean/UnderwaterSystem.js"))
+    );
+    const camera = {
+      globalPosition: v,
+      fov: 0.9,
+      getDirection: () => v,
+      getScene: () => ({ getTransformMatrix: () => ({}) }),
+    };
+    const system = new UnderwaterSystem({}, { getAspectRatio: () => 1 }, camera, {});
+    system.pp = {};
+    system.derivTex = { name: "test-derivatives" };
+    const sky = {
+      sunDir: v, sunColor: {}, sunI: 1, turbidity: 0,
+      storm: 0, flash: 0,
+    };
+    const water = {
+      absorb: [0, 0, 0], scatterCol: [0, 0, 0],
+      scatterAmt: 0, turbid: 0,
+    };
+    system.update(1 / 60, 0, sky, water);
+    assert.equal(typeof system.pp.onApply, "function",
+      "dry frames must still install the attached post-process binder");
+    let bound = null;
+    const effect = new Proxy({}, {
+      get: (_target, prop) => prop === "setTexture"
+        ? (_name, texture) => { bound = texture; }
+        : () => {},
+    });
+    system.pp.onApply(effect);
+    assert.equal(bound, system.derivTex,
+      "the declared WebGPU sampler must always receive a texture");
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
+});
+
+await check("boot requires a rendered frame and contains render-loop failures", () => {
+  assert.match(main, /this\.frames\s*>\s*0\s*&&\s*this\.allMaterialsReady\(\)/);
+  assert.match(main, /this\._renderTick\s*=\s*\(\)\s*=>\s*{/);
+  assert.match(main, /this\._handleRenderFailure\(error\)/);
+  assert.match(main, /this\.engine\.stopRenderLoop\(this\._renderTick\)/);
+  assert.doesNotMatch(main, /setTimeout\(\(\)\s*=>\s*boot\.remove\(\)/);
 });
 
 await check("significant wave height sums independent band variance", async () => {

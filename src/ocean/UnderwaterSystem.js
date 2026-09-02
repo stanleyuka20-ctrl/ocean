@@ -151,10 +151,11 @@ export class UnderwaterSystem {
     this.droplets = Math.max(0, this.droplets - dt * 0.42);
 
     if (!this.pp) return;
-    const needPost = this.enabled && (this.blend > 0.008 || this.droplets > 0.008);
-    if (typeof this.pp.enabled === "boolean") this.pp.enabled = needPost;
-    else if (this.pp.setEnabled) this.pp.setEnabled(needPost);
-    if (!needPost) return;
+    // Babylon 9 PostProcess instances do not expose an enabled/setEnabled
+    // switch.  The pass therefore remains attached above water as well.  Its
+    // bindings must be complete on every frame: WebGL happens to tolerate an
+    // unset sampler, while WebGPU correctly rejects the incomplete bind group.
+    // The zero submerged/droplet uniforms below make this a dry-frame copy.
     const BJ = B();
     const self = this;
     this.pp.onApply = (effect) => {

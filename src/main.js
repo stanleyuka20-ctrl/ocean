@@ -38,12 +38,19 @@ function isInteractiveTarget(target) {
 
 function showBootFailure(error) {
   const message = error && error.message ? error.message : String(error);
+  boot.classList.remove("gone");
   boot.classList.add("failed");
-  bootStatus.textContent = `Abyssal couldn’t start: ${message}. Reload the page or try compatibility mode.`;
+  boot.setAttribute("aria-hidden", "false");
+  boot.setAttribute("aria-busy", "false");
   bootStatus.style.color = "#ffaca8";
   bootStatus.setAttribute("role", "alert");
+  bootStatus.setAttribute("aria-live", "assertive");
+  bootStatus.setAttribute("aria-atomic", "true");
+  bootStatus.textContent = `Abyssal couldn’t start: ${message}. Reload the page or try compatibility mode.`;
   const actions = document.getElementById("bootActions");
   if (actions) actions.classList.remove("hidden");
+  const retry = document.getElementById("bootRetry");
+  if (retry) retry.focus();
 }
 
 document.getElementById("bootRetry").addEventListener("click", () => location.reload());
@@ -66,6 +73,14 @@ class App {
     this._hudTimer = 0;
     this.timeLerp = null;
     this._loopOn = false;
+    this._renderError = null;
+    this._renderTick = () => {
+      try {
+        this._tick();
+      } catch (error) {
+        this._handleRenderFailure(error);
+      }
+    };
     this.showHud = true;
     this.reduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
     this._announceTimer = 0;
@@ -217,11 +232,23 @@ class App {
     // A resize destroys the swapchain texture, so skip the frame that does it:
     // WebGPU rejects a submit that touches a texture destroyed mid-frame.
     this._startLoop();
-    await new Promise((res) => {
+    const warmStarted = performance.now();
+    await new Promise((res, rej) => {
       const t = setInterval(() => {
-        warm++;
-        progress(Math.min(0.99, 0.95 + warm * 0.0025), "Finishing setup…");
-        if (warm > 400 || this.allMaterialsReady()) { clearInterval(t); res(); }
+        try {
+          if (this._renderError) throw this._renderError;
+          warm++;
+          progress(Math.min(0.99, 0.95 + warm * 0.0025), "Finishing setup…");
+          if (this.frames > 0 && this.allMaterialsReady()) {
+            clearInterval(t);
+            res();
+          } else if (performance.now() - warmStarted > 90000) {
+            throw new Error("the renderer did not become ready");
+          }
+        } catch (error) {
+          clearInterval(t);
+          rej(error);
+        }
       }, 60);
     });
 
@@ -234,7 +261,6 @@ class App {
     this._showOnboarding();
     boot.classList.add("gone");
     boot.setAttribute("aria-hidden", "true");
-    setTimeout(() => boot.remove(), 900);
     window.__booted = true;
     if (!lockres && dynParam !== "0"
         && (isMobileDevice() || this.canvas.clientWidth > 1680)) {
@@ -622,6 +648,17 @@ class App {
   /** frames actually RENDERED; __advance counts against this, not iterations */
   frames = 0;
 
+  _handleRenderFailure(value) {
+    if (this._renderError) return;
+    const error = value instanceof Error ? value : new Error(String(value));
+    this._renderError = error;
+    window.__renderError = { message: error.message };
+    this.invalidateReady();
+    this._stopLoop();
+    console.error("[ocean] render loop failed:", error);
+    if (window.__booted) showBootFailure(error);
+  }
+
   _tick() {
     if (this.paused) return;
     if (this.present.applyNow()) {
@@ -642,19 +679,20 @@ class App {
   }
 
   _startLoop() {
-    if (this._loopOn) return;
+    if (this._loopOn || this._renderError) return;
     this._loopOn = true;
-    this.engine.runRenderLoop(() => this._tick());
+    this.engine.runRenderLoop(this._renderTick);
   }
 
   _stopLoop() {
     if (!this._loopOn) return;
     this._loopOn = false;
-    this.engine.stopRenderLoop();
+    this.engine.stopRenderLoop(this._renderTick);
   }
 
   _syncLoop() {
-    const want = !this.paused && !(document.hidden && window.__booted);
+    const want = !this.paused && !this._renderError
+      && !(document.hidden && window.__booted);
     if (want) this._startLoop();
     else this._stopLoop();
   }
