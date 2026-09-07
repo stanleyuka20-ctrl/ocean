@@ -370,10 +370,10 @@ vec2 rainRipple(vec2 p, float t, float amount){
     float width = 0.020 + 0.018 * age;
     float envelope = smoothstep(0.0, 0.07, age) * (1.0 - smoothstep(0.70, 1.0, age));
     float eventSeed = ahash21(seed + 53.1);
-    float active = smoothstep(eventSeed - 0.1, eventSeed + 0.1, amount);
+    float eventWeight = smoothstep(eventSeed - 0.1, eventSeed + 0.1, amount);
     float g = exp(-0.5 * x * x / (width * width));
     float slope = 0.0015 * envelope * g * (57.0 * cos(57.0 * x) - x / (width * width) * sin(57.0 * x));
-    acc += delta / max(d, 1e-4) * slope * active;
+    acc += delta / max(d, 1e-4) * slope * eventWeight;
   }
   return acc * amount;
 }

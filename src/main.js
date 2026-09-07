@@ -46,7 +46,10 @@ function showBootFailure(error) {
   bootStatus.setAttribute("role", "alert");
   bootStatus.setAttribute("aria-live", "assertive");
   bootStatus.setAttribute("aria-atomic", "true");
-  bootStatus.textContent = `Abyssal couldn’t start: ${message}. Reload the page or try compatibility mode.`;
+  const recovery = new URLSearchParams(location.search).get("webgl") === "1"
+    ? "Reload the page, or try a current browser with hardware acceleration enabled."
+    : "Reload the page or try compatibility mode.";
+  bootStatus.textContent = `Abyssal couldn’t start: ${message}. ${recovery}`;
   const actions = document.getElementById("bootActions");
   if (actions) actions.classList.remove("hidden");
   const retry = document.getElementById("bootRetry");
@@ -645,10 +648,18 @@ class App {
    */
   allMaterialsReady() {
     const o = this.ocean;
-    if (!o.material.material.isReady(o.mesh)) return false;
-    if (!this.sky.material.isReady(this.sky.dome)) return false;
+    const materialReady = (material, mesh, name) => {
+      const ready = material.isReady(mesh);
+      if (!ready) {
+        const error = material.getEffect?.()?.getCompilationError?.();
+      if (error) throw new Error(`${name} shader could not compile`);
+      }
+      return ready;
+    };
+    if (!materialReady(o.material.material, o.mesh, "Ocean")) return false;
+    if (!materialReady(this.sky.material, this.sky.dome, "Sky")) return false;
     if (o.seafloor && o.seafloor.material && o.seafloor.mesh) {
-      if (!o.seafloor.material.isReady(o.seafloor.mesh)) return false;
+      if (!materialReady(o.seafloor.material, o.seafloor.mesh, "Seafloor")) return false;
     }
     return o.buoyancy.ready && !!o.buoyancy.grids;
   }

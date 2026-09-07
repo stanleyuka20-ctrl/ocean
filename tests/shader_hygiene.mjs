@@ -16,6 +16,15 @@
 // ---------------------------------------------------------------------------
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import assert from "node:assert/strict";
+
+// GLSL reserves these for future use. Some desktop drivers accept them,
+// whereas the browser's glslang/SPIR-V compiler rejects the whole material.
+const reservedDeclaration = /\b(?:bool|int|uint|float|[biu]?vec[234]|mat[234](?:x[234])?)\s+(active|common|partition|resource|filter|sizeof|namespace|using|input|output)\b/;
+const reservedLocal = line => reservedDeclaration.test(line.split("//", 1)[0]);
+assert.equal(reservedLocal("float active = 1.0;"), true);
+assert.equal(reservedLocal("float eventWeight = 1.0;"), false);
+assert.equal(reservedLocal("// float active = 1.0;"), false);
 
 const DIRS = ["src/shaders"];
 let fails = 0;
@@ -25,6 +34,13 @@ for (const d of DIRS) for (const f of readdirSync(d)) if (f.endsWith(".js")) fil
 for (const path of files) {
   const src = readFileSync(path, "utf8");
   const lines = src.split("\n");
+
+  lines.forEach((line, i) => {
+    if (reservedLocal(line)) {
+      console.log(`FAIL  ${path}:${i + 1}  reserved shader identifier in declaration`);
+      fails++;
+    }
+  });
 
   // --- backticks inside // comments ---------------------------------------
   lines.forEach((line, i) => {
@@ -74,6 +90,6 @@ for (const path of files) {
 }
 
 console.log(fails === 0
-  ? `PASS  ${files.length} shader files: no early returns, no backticks, no ";" in uniform comments`
+  ? `PASS  ${files.length} shader files: reserved identifiers, early returns and comment hazards checked`
   : `\n${fails} problem(s)`);
 process.exit(fails === 0 ? 0 : 1);
