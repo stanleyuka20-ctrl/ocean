@@ -17,6 +17,10 @@ export const ATMO_GLSL = /* glsl */ `
 #ifndef ATMO_INCLUDED
 #define ATMO_INCLUDED
 
+// Shared by every atmospheric material. No additional texture bindings.
+uniform vec4 uWeather;
+uniform vec3 uLightningDir;
+
 #define PI  3.141592653589793
 #define I_PI 0.3183098861837907
 
@@ -222,11 +226,14 @@ float cloudDensityAt(vec3 pos, float base, float top, float cover,
 {
   float h = (pos.y - base) / max(top - base, 1.0);
   if (h < 0.0 || h > 1.0) return 0.0;
-  vec2 q = (pos.xz + drift) * 0.00042;
+  vec2 shear = drift * (1.0 + h * 0.18) + vec2(sin(uWeather.z * 0.014 + h * 3.0),
+    cos(uWeather.z * 0.011 + h * 2.0)) * (45.0 + 100.0 * h);
+  vec2 q = (pos.xz + shear) * 0.00042;
   float cov = cloudCoverageField(q, cover, storm);
   if (cov <= 0.001) return 0.0;
-  float prof = smoothstep(0.0, 0.12, h) * smoothstep(1.0, 0.45, h);
-  vec3 wp = vec3(pos.x + drift.x, pos.y, pos.z + drift.y) * 0.00085;
+  float deck = smoothstep(0.62, 0.92, cover) * (0.6 + 0.4 * storm);
+  float prof = smoothstep(0.0, 0.065, h) * (1.0 - smoothstep(mix(0.48, 0.78, deck), 1.0, h));
+  vec3 wp = vec3(pos.x + shear.x, pos.y, pos.z + shear.y) * 0.00085;
   float det = fbm3(wp * 3.1, 3);
   float ero = fbm3(wp * 11.0 + 4.3, 3);
   // THICKNESS carries the variation once coverage saturates.  At cover 1 the
@@ -234,17 +241,26 @@ float cloudDensityAt(vec3 pos, float base, float top, float cover,
   // an overcast sky becomes one flat grey slab with a ruler-straight edge at
   // the horizon.  Erosion also has to keep biting at full cover, not fade out.
   float thick = 0.35 + 0.95 * fbm2(q * 2.7 + 5.1, 3);
-  float d = cov * prof * thick;
-  d -= ero * 0.34 + det * 0.22 * (1.0 - 0.45 * cov);
+  float billow = cov + (det - 0.36) * 0.65 - h * h * 0.12;
+  float d = mix(billow, cov, deck) * prof * thick;
+  d -= ero * mix(0.24 + 0.18 * h, 0.12, deck);
   d = max(d, 0.0);
   d = pow(d, mix(1.5, 0.85, sharp));
   return d * mix(1.0, 1.7, storm);
 }
 
+// Macro density for shadow rays: fine erosion belongs only on the view ray.
+float cloudLightDensity(vec3 p, float base, float top, float cover, float storm, vec2 drift){
+  float h = (p.y - base) / max(top - base, 1.0);
+  float profile = smoothstep(0.0, 0.08, h) * (1.0 - smoothstep(0.68, 1.0, h));
+  vec2 q = (p.xz + drift * (1.0 + clamp(h, 0.0, 1.0) * 0.18)) * 0.00042;
+  return cloudCoverageField(q, cover, storm) * profile * mix(0.48, 0.95, storm);
+}
+
 // Cheap 2D version used for cloud shadows on the sea.
 float cloudShadow(vec2 worldXZ, vec3 sunDir, float cover, float storm, vec2 drift){
   if (sunDir.y < 0.03 || cover < 0.02) return 1.0;
-  vec2 p = worldXZ + sunDir.xz / max(sunDir.y, 0.06) * 1500.0;
+  vec2 p = worldXZ + sunDir.xz / max(sunDir.y, 0.06) * (1500.0 - 500.0 * storm);
   float cov = cloudCoverageField((p + drift) * 0.00042, cover, storm);
   return 1.0 - cov * mix(0.62, 0.92, storm);
 }
@@ -286,10 +302,10 @@ vec4 cloudLayer(vec3 ro, vec3 rd, vec3 sunDir, vec3 sunCol, float cover,
     if (d <= 0.001) continue;
 
     float ls = 0.0;
-    vec3 lp = p;
+    float lightPath = clamp((top - p.y) / max(sunDir.y, 0.08), 200.0, 7000.0);
     for (int j = 0; j < 2; ++j){
-      lp += sunDir * (140.0 + 220.0 * float(j));
-      ls += cloudDensityAt(lp, base, top, cover, sharp, storm, drift);
+      vec3 lp = p + sunDir * lightPath * (0.18 + 0.48 * float(j));
+      ls += cloudLightDensity(lp, base, top, cover, storm, drift) * lightPath * 0.0006;
     }
     float beer   = exp(-ls * 1.15);
     float powder = 1.0 - exp(-d * 3.4);
@@ -306,7 +322,8 @@ vec4 cloudLayer(vec3 ro, vec3 rd, vec3 sunDir, vec3 sunCol, float cover,
     // extreme storm as bright as a midday sky, which is the one thing a storm
     // must not look like.
     lit *= mix(1.0, 0.28, storm);
-    lit += vec3(1.0) * flash * 2.4;
+    float cellFlash = pow(max(dot(rd, uLightningDir), 0.0), 24.0);
+    lit += vec3(0.72, 0.83, 1.0) * flash * (0.08 + 3.2 * cellFlash);
 
     float a = 1.0 - exp(-d * dt * 0.0012);
     acc += lit * a * transm * bright;
@@ -322,7 +339,8 @@ vec4 cloudLayer(vec3 ro, vec3 rd, vec3 sunDir, vec3 sunCol, float cover,
     ci = smoothstep(0.52, 0.78, s) * (0.30 + 0.30 * cover) * (1.0 - storm * 0.7);
     ci *= smoothstep(0.0, 0.13, rdc.y);
   }
-  vec3 cirCol = sunCol * (0.55 + 0.45 * max(mu, 0.0)) + vec3(0.30, 0.40, 0.55);
+  float cirLight = clamp(dot(sunCol, vec3(0.3333)) * 1.3, 0.0, 1.4);
+  vec3 cirCol = sunCol * (0.55 + 0.45 * max(mu, 0.0)) + vec3(0.30, 0.40, 0.55) * cirLight;
   float alpha = 1.0 - transm;
   acc = acc + cirCol * ci * (1.0 - alpha) * 0.55;
   alpha = alpha + ci * (1.0 - alpha) * 0.8;
@@ -390,6 +408,24 @@ vec3 celestialBodies(vec3 dir, vec3 sunDir, vec3 sunCol, float sunI,
 // ---------------------------------------------------------------------------
 //  the one entry point everything uses
 // ---------------------------------------------------------------------------
+vec3 marineFogLight(float sunI, float cover, float storm){
+  float daylight = sunI * mix(0.72, 0.28, storm) * mix(1.0, 0.72, cover);
+  return vec3(0.58, 0.66, 0.73) * daylight + vec3(0.0015, 0.0020, 0.0030);
+}
+
+float marineTransmission(vec3 ro, vec3 rd, float distanceM){
+  // Low marine layer, integrated with fixed samples; sigma is inverse metres.
+  float sigma = uWeather.y * 0.011 + uWeather.x * 0.00018;
+  float height = mix(320.0, 85.0, uWeather.y);
+  float path = min(max(distanceM, 0.0), 40000.0);
+  float column = 0.0;
+  for (int i = 0; i < 3; ++i){
+    float y = max(ro.y + rd.y * path * (float(i) + 0.5) / 3.0, 0.0);
+    column += exp(-y / height);
+  }
+  return exp(-min(sigma * path * column / 3.0, 60.0));
+}
+
 vec3 skyRadiance(vec3 ro, vec3 rd, vec3 sunDir, vec3 sunCol, float sunI,
                  vec3 moonDir, vec3 moonCol, float moonI, float turbidity,
                  float cover, float sharp, float bright, float storm,
@@ -400,15 +436,29 @@ vec3 skyRadiance(vec3 ro, vec3 rd, vec3 sunDir, vec3 sunCol, float sunI,
   vec3 col = scatter(o, rd, sunDir, 1e7, turbidity, tr) * sunCol * sunI * SUN_E;
   col += scatter(o, rd, moonDir, 1e7, turbidity, trm) * moonCol * moonI * SUN_E;
 
-  float nightF = smoothstep(0.10, -0.06, sunDir.y);
+  float nightF = 1.0 - smoothstep(-0.06, 0.10, sunDir.y);
   col += starField(rd) * nightF * tr;
   if (withBodies)
     col += celestialBodies(rd, sunDir, sunCol, sunI, moonDir, moonCol, moonI) * tr;
 
-  vec4 cl = cloudLayer(ro, rd, sunDir, sunCol * sunI + moonCol * moonI * 0.9,
+  vec3 cloudSunT = exp(-opticalDepth(vec3(0.0, R_GROUND + 1800.0, 0.0), sunDir, turbidity));
+  vec3 cloudDir = sunI > moonI ? sunDir : moonDir;
+  vec4 cl = cloudLayer(ro, rd, cloudDir, sunCol * sunI * cloudSunT + moonCol * moonI * 0.9,
                        cover, sharp, bright, storm, drift, flash);
-  col = mix(col, cl.rgb, cl.a);
-  col += vec3(0.9, 0.95, 1.05) * flash * 0.35 * (0.4 + 0.6 * cl.a);
+  // cloudLayer already accumulates premultiplied radiance.
+  col = col * (1.0 - cl.a) + cl.rgb;
+  col += vec3(0.72, 0.83, 1.0) * flash * 0.24 * pow(max(dot(rd, uLightningDir), 0.0), 16.0);
+  if (uWeather.x > 0.001){
+    // Distant precipitation columns, advected with the same cloud field.
+    float rayLength = min(1800.0 / max(rd.y, 0.06), 22000.0);
+    vec2 rainXZ = ro.xz + rd.xz * rayLength;
+    float shafts = cloudCoverageField((rainXZ + drift) * 0.00042, cover, storm);
+    shafts *= 0.35 + 0.65 * fbm2((rainXZ + drift) * vec2(0.0008, 0.00022), 2);
+    float rainT = exp(-uWeather.x * shafts * 2.0 * (1.0 - smoothstep(0.06, 0.52, rd.y)));
+    col = col * rainT + marineFogLight(sunI, cover, storm) * (1.0 - rainT);
+  }
+  float fogT = marineTransmission(ro, rd, 30000.0);
+  col = col * fogT + marineFogLight(sunI, cover, storm) * (1.0 - fogT);
   return max(col, vec3(0.0));
 }
 
@@ -428,6 +478,9 @@ void aerial(vec3 ro, vec3 rd, float dist, vec3 sunDir, vec3 sunCol, float sunI,
   // exactly the artefact an overcast is supposed to remove.  Cover has to dim
   // the surface haze the same way it dims the dome.
   inscat *= mix(1.0, mix(0.72, 0.42, storm), cover);
+  float fogT = marineTransmission(ro, rd, dist);
+  inscat = inscat * fogT + marineFogLight(sunI, cover, storm) * (1.0 - fogT);
+  trans *= fogT;
 }
 #endif
 `;

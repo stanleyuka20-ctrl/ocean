@@ -55,10 +55,32 @@ export const WEATHER_PRESETS = {
     label: "Night", sea: "moderate", water: "pacific",
     cloudCover: 0.28, cloudSharp: 0.5, storm: 0.0, rain: 0.0, turbidity: 2.2, timeOfDay: 0.6,
   },
+  seaFog: {
+    label: "Sea Fog", sea: "calm", water: "pacific",
+    cloudCover: 0.78, cloudSharp: 0.12, storm: 0.02, rain: 0, turbidity: 4.8,
+    fog: 0.92, timeOfDay: 7.5,
+  },
+  squall: {
+    label: "Squall", sea: "rough", water: "atlantic",
+    cloudCover: 0.94, cloudSharp: 0.30, storm: 0.62, rain: 0.80, turbidity: 5.8,
+    fog: 0.12, timeOfDay: 15.5,
+  },
+  clearing: {
+    label: "Clearing Skies", sea: "moderate", water: "atlantic",
+    cloudCover: 0.52, cloudSharp: 0.68, storm: 0.06, rain: 0.04, turbidity: 3.0,
+    fog: 0.06, timeOfDay: 16.5,
+  },
 };
 
 const KEYS = ["windSpeed", "fetch", "choppy", "swell", "swellPeriod", "waveScale", "foam",
-  "cloudCover", "cloudSharp", "storm", "rain", "turbidity", "windDirDeg"];
+  "cloudCover", "cloudSharp", "storm", "rain", "fog", "turbidity", "windDirDeg"];
+
+export const WEATHER_LIMITS = {
+  windSpeed: [0.5, 34], fetch: [5000, 900000], choppy: [0, 2], swell: [0, 6],
+  swellPeriod: [5, 20], waveScale: [0.15, 2.2], foam: [0, 3],
+  cloudCover: [0, 1], cloudSharp: [0, 1], storm: [0, 1], rain: [0, 1], fog: [0, 1],
+  turbidity: [1.2, 9], windDirDeg: [0, 360],
+};
 
 export class WeatherOceanController {
   constructor(ocean) {
@@ -66,7 +88,7 @@ export class WeatherOceanController {
     this.current = {
       windSpeed: 8.5, fetch: 90000, choppy: 1.15, swell: 0.85, swellPeriod: 12.0, waveScale: 1.0,
       foam: 1.0, cloudCover: 0.34, cloudSharp: 0.45, storm: 0.0, rain: 0.0,
-      turbidity: 2.4, windDirDeg: 35,
+      turbidity: 2.4, windDirDeg: 35, fog: 0,
     };
     this.target = Object.assign({}, this.current);
     this.speed = 0.28;                 // 1/e per second
@@ -87,7 +109,7 @@ export class WeatherOceanController {
       windSpeed: s.windSpeed, fetch: s.fetch, choppy: s.choppy, swell: s.swell,
       swellPeriod: s.swellPeriod, waveScale: s.waveScale, foam: s.foam,
       cloudCover: p.cloudCover, cloudSharp: p.cloudSharp, storm: p.storm,
-      rain: p.rain, turbidity: p.turbidity,
+      rain: p.rain, turbidity: p.turbidity, fog: p.fog || 0,
     });
     this.waterKey = p.water;
     this._dirty = true;
@@ -114,7 +136,10 @@ export class WeatherOceanController {
 
   set(key, value, instant) {
     if (!KEYS.includes(key) || !Number.isFinite(value)) return false;
+    const [lo, hi] = WEATHER_LIMITS[key];
+    value = key === "windDirDeg" ? ((value % 360) + 360) % 360 : Math.min(hi, Math.max(lo, value));
     this.presetKey = null;
+    if (Object.hasOwn(SEA_STATES.moderate, key) || key === "windDirDeg") this.seaKey = null;
     this.target[key] = value;
     this._dirty = true;
     if (instant) this.current[key] = value;
@@ -122,11 +147,16 @@ export class WeatherOceanController {
   }
 
   update(dt) {
-    const k = 1 - Math.exp(-dt * this.speed * 4.0);
+    if (!Number.isFinite(dt) || dt < 0) return;
+    const rate = Number.isFinite(this.speed) ? Math.max(0, this.speed) : 0.28;
+    const k = -Math.expm1(-dt * rate * 4.0);
     let windMoved = 0;
     for (const key of KEYS) {
       const before = this.current[key];
-      this.current[key] += (this.target[key] - before) * k;
+      const delta = key === "windDirDeg"
+        ? ((this.target[key] - before + 540) % 360) - 180 : this.target[key] - before;
+      this.current[key] += delta * k;
+      if (key === "windDirDeg") this.current[key] = (this.current[key] + 360) % 360;
       if (Math.abs(this.current[key] - this.target[key]) < 1e-4) this.current[key] = this.target[key];
       if (key === "windSpeed" || key === "swell" || key === "swellPeriod" ||
           key === "windDirDeg" || key === "fetch")
@@ -159,6 +189,8 @@ export class WeatherOceanController {
     o.sky.cloudSharp = c.cloudSharp;
     o.sky.storm = c.storm;
     o.sky.turbidity = c.turbidity;
+    o.sky.rain = c.rain;
+    o.sky.fog = c.fog;
     o.sky.windDir = o.sim.windVector();
     o.sky.windSpeed = c.windSpeed;
   }

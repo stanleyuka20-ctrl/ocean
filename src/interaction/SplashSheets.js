@@ -76,7 +76,7 @@ export class SplashSheets {
           "uTime", "uSeaLevel", "uCamPos", "uWaterTint",
           "uSunDir", "uSunColor", "uMoonDir", "uMoonColor", "uSunI", "uMoonI",
           "uTurbidity", "uCloudCover", "uCloudSharp", "uCloudBright", "uStorm",
-          "uFlash", "uCloudDrift"],
+          "uFlash", "uCloudDrift", "uWeather", "uLightningDir"],
         samplers: ["uSlots"],
         defines: ["#define LOGARITHMICDEPTH"],
         needAlphaBlending: true,

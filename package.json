@@ -8,6 +8,6 @@
   },
   "scripts": {
     "build": "node scripts/build-site.mjs",
-    "test": "node tests/fft_test.mjs && node tests/shader_hygiene.mjs && node tests/upgrade_contract.mjs"
+    "test": "node tests/fft_test.mjs && node tests/shader_hygiene.mjs && node tests/upgrade_contract.mjs && node tests/weather_behavior.mjs"
   }
 }

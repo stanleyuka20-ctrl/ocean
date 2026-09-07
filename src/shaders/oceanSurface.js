@@ -357,25 +357,25 @@ float seabedAtF(vec2 p){
 vec2 rainRipple(vec2 p, float t, float amount){
   if (amount < 0.01) return vec2(0.0);
   vec2 acc = vec2(0.0);
-  for (int L = 0; L < 2; ++L){
-    float sc = (L == 0) ? 1.6 : 3.7;
-    vec2 q = p * sc;
-    vec2 c = floor(q), f = fract(q);
-    for (int j = 0; j < 4; ++j){
-      vec2 o = vec2(float(j - (j / 2) * 2), float(j / 2));
-      vec2 id = c + o;
-      float h = ahash21(id * 1.13 + float(L) * 7.7);
-      float h2 = ahash21(id * 2.71 + float(L) * 3.1);
-      float life = fract(t * (0.85 + 0.4 * h2) + h);
-      if (h2 > amount * 0.85) continue;
-      vec2 cen = o + vec2(h, h2) * 0.8;
-      float d = length(f - cen);
-      float r = life * 0.42;
-      float ring = exp(-pow((d - r) * 26.0, 2.0)) * (1.0 - life) * (1.0 - life);
-      acc += normalize(f - cen + 1e-5) * ring;
-    }
+  vec2 cell = floor(p / 0.75);
+  for (int j = 0; j < 9; ++j){
+    vec2 id = cell + vec2(float(j - (j / 3) * 3) - 1.0, float(j / 3) - 1.0);
+    float u = t * 1.6 + ahash21(id);
+    float epoch = floor(u), age = fract(u);
+    vec2 seed = id + epoch * vec2(19.19, 73.31);
+    vec2 center = (id + vec2(ahash21(seed), ahash21(seed + 17.7))) * 0.75;
+    vec2 delta = p - center;
+    float d = length(delta);
+    float x = d - age * 0.44;
+    float width = 0.020 + 0.018 * age;
+    float envelope = smoothstep(0.0, 0.07, age) * (1.0 - smoothstep(0.70, 1.0, age));
+    float eventSeed = ahash21(seed + 53.1);
+    float active = smoothstep(eventSeed - 0.1, eventSeed + 0.1, amount);
+    float g = exp(-0.5 * x * x / (width * width));
+    float slope = 0.0015 * envelope * g * (57.0 * cos(57.0 * x) - x / (width * width) * sin(57.0 * x));
+    acc += delta / max(d, 1e-4) * slope * active;
   }
-  return acc * 0.9 * amount;
+  return acc * amount;
 }
 
 // GGX with a spherical light source (the sun subtends 0.53 deg) -- this is
@@ -397,7 +397,7 @@ float ggxSun(vec3 N, vec3 V, vec3 L, float rough){
 }
 
 vec3 fresnelSchlick(float c, vec3 f0, float rough){
-  return f0 + (max(vec3(1.0 - rough), f0) - f0) * pow(clamp(1.0 - c, 0.0, 1.0), 5.0);
+  return f0 + (vec3(1.0) - f0) * pow(clamp(1.0 - c, 0.0, 1.0), 5.0);
 }
 
 void main(){
@@ -451,7 +451,7 @@ void main(){
   }
 
   // rain rings + wake ripples
-  vec2 dist2 = rainRipple(vFlat.xz, uTime, uRainAmount);
+  vec2 dist2 = rainRipple(vFlat.xz, uTime, uRainAmount) * (1.0 - smoothstep(0.025, 0.055, fp));
   slope += dist2 * clamp(1.0 - fp / 0.6, 0.0, 1.0);
 
   float wake = 0.0;
@@ -700,8 +700,10 @@ void main(){
   // the face below it stays clear -- not a white band along every crest.
   float ww = vBrk * smoothstep(0.30, 0.92, vLipT) * uWhitewater;
   // break it up so it never reads as paint: holes, cores and torn edges
-  float wn = fbm2(vFlat.xz * 0.9 + uWindDir * uTime * 0.35, 4);
-  float wn2 = fbm2(vFlat.xz * 3.7 - uWindDir * uTime * 0.9, 3);
+  vec2 foamUV = vec2(dot(vFlat.xz, uWindDir), dot(vFlat.xz, vec2(-uWindDir.y, uWindDir.x)));
+  float wn = fbm2(foamUV * vec2(1.5, 0.36) + vec2(uTime * 0.35, 0.0), 4);
+  float wn2 = mix(fbm2(foamUV * vec2(4.8, 1.8) - vec2(uTime * 0.9, 0.0), 3),
+    0.5, smoothstep(0.035, 0.12, fp));
   ww *= clamp(0.35 + 1.5 * wn, 0.0, 1.4) * clamp(0.55 + 0.9 * wn2, 0.0, 1.35);
   ww = clamp(ww, 0.0, 1.0);
 
@@ -709,7 +711,8 @@ void main(){
   foam *= clamp(0.35 + 0.65 * fbm2(vFlat.xz * 1.6 + uWindDir * uTime * 0.4, 3) * 2.0, 0.0, 1.0);
   foam = clamp(foam, 0.0, 1.0);
   if (foam > 0.001){
-    float fn = fbm2(vFlat.xz * 5.5 + uWindDir * uTime * 0.5, 3);
+    float fn = mix(fbm2(vFlat.xz * 5.5 + uWindDir * uTime * 0.5, 3),
+      0.5, smoothstep(0.025, 0.09, fp));
     vec3 foamN = normalize(vec3(-slope.x * 0.3 + (fn - 0.5) * 0.6, 1.0, -slope.y * 0.3));
     // Dense whitewater is a lit volume of air and water, so it darkens inside
     // and keeps a blue ambient -- foam that is uniformly white reads as paint.
@@ -726,11 +729,7 @@ void main(){
   aerial(uCamPos, -V, dist, uSunDir, uSunColor, uSunI, uTurbidity, uStorm, uCloudCover, inscat, trans);
   col = col * trans + inscat;
 
-  // rain veil, range limited or every storm becomes a grey pancake from above
-  if (uRainAmount > 0.01){
-    float veil = uRainAmount * 0.30 * (1.0 - exp(-dist / 900.0)) * smoothstep(3000.0, 300.0, dist);
-    col = mix(col, (sunCol * 0.10 + vec3(0.05, 0.07, 0.09)) * (0.4 + 0.6 * shadow), veil);
-  }
+  // Precipitation extinction is shared with sky and terrain in aerial().
   col += vec3(0.85, 0.9, 1.0) * uFlash * 0.20 * (0.3 + 0.7 * fAmt);
 
   // ---- debug channels ----------------------------------------------------

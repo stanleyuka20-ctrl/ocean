@@ -207,7 +207,7 @@ export class GpuParticleField {
     if (isBubble) uniforms.push("uTime");
     if (!underLit) uniforms.push("uMoonDir", "uMoonColor", "uMoonI", "uTurbidity",
       "uCloudCover", "uCloudSharp", "uCloudBright", "uStorm", "uFlash",
-      "uCloudDrift", "uMist");
+      "uCloudDrift", "uMist", "uWeather", "uLightningDir");
 
     const mat = new BJ.ShaderMaterial(id + "mat", this.scene,
       { vertex: id, fragment: id },

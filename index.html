@@ -61,6 +61,10 @@
 </div>
 
 <nav id="quickActions" class="quick-actions hidden" aria-label="Ocean actions">
+  <label class="weather-picker" for="weatherSelect">
+    <span>Weather</span>
+    <select id="weatherSelect" aria-label="Weather scene"></select>
+  </label>
   <button type="button" id="quickView" data-icon="◎">
     <span>Next view</span><kbd>C</kbd>
   </button>
@@ -77,6 +81,7 @@
     <div class="hud-row hud-primary"><b id="hudFps">--</b> FPS<span class="dim" id="hudMs"></span></div>
     <div class="hud-row dim" id="hudBackend">—</div>
     <div class="hud-row" id="hudState">—</div>
+    <div class="hud-row dim" id="hudWeather">—</div>
     <div class="hud-row dim" id="hudPos">—</div>
     <div class="hud-row dim" id="hudPerf">—</div>
   </div>

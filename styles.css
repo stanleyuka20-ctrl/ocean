@@ -821,3 +821,39 @@ body.touch-on .brand-mark { display: none; }
   .dialog,
   #panel { background: var(--glass-solid); }
 }
+.weather-picker {
+  display: grid;
+  gap: 3px;
+  padding: 3px 10px;
+  border-right: 1px solid var(--edge);
+  color: var(--muted, #a5bbc6);
+  font-size: 12px;
+}
+.weather-picker select {
+  width: 154px;
+  min-height: 30px;
+  border: 0;
+  border-radius: 5px;
+  background: #0c202c;
+  color: #edf8fc;
+  font: inherit;
+  font-size: 14px;
+  padding: 4px;
+  cursor: pointer;
+}
+.weather-picker select:focus-visible { outline: 2px solid #66dcff; outline-offset: 2px; }
+@media (max-width: 640px) {
+  .quick-actions .weather-picker { padding: 0 5px; }
+  .quick-actions .weather-picker select { width: 115px; min-height: 40px; font-size: 12px; }
+  .quick-actions .weather-picker > span { display: none; }
+}
+@media (max-width: 400px) {
+  #panel .row { grid-template-columns: minmax(0, 1fr) auto; }
+  #panel .row > label { grid-column: 1 / -1; white-space: normal; }
+  #panel .row .val { min-width: 60px; }
+  #panel .row.chk > label { grid-column: 1; }
+}
+@media (pointer: coarse) {
+  #panel button, #panel select { min-height: 44px; }
+  #panel input[type="range"] { min-height: 44px; }
+}

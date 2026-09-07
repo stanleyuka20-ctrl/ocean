@@ -298,6 +298,26 @@ class App {
     this._shellBound = true;
     const help = document.getElementById("help");
     const quickHelp = document.getElementById("quickHelp");
+    const weatherSelect = document.getElementById("weatherSelect");
+    const custom = document.createElement("option");
+    custom.value = "";
+    custom.textContent = "Custom weather";
+    custom.disabled = true;
+    weatherSelect.appendChild(custom);
+    for (const [key, preset] of Object.entries(WEATHER_PRESETS)) {
+      const option = document.createElement("option");
+      option.value = key;
+      option.textContent = preset.label;
+      weatherSelect.appendChild(option);
+    }
+    weatherSelect.value = this.ocean.weather.presetKey || "";
+    weatherSelect.addEventListener("change", () => this.applyEnvironmentPreset(weatherSelect.value));
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    motion.addEventListener("change", (event) => {
+      this.reduceMotion = event.matches;
+      if (event.matches) this.setLightning(false, true);
+      if (this.panel) this.panel.refresh();
+    });
     document.getElementById("quickView").addEventListener("click", () => this.cycleCameraView());
     document.getElementById("quickPanel").addEventListener("click", () => this.panel.toggle());
     quickHelp.addEventListener("click", () => this.setHelpOpen(help.classList.contains("hidden")));
@@ -391,7 +411,7 @@ class App {
   applyEnvironmentPreset(key, opts = {}) {
     const p = WEATHER_PRESETS[key];
     if (!p) return false;
-    const instant = !!opts.instant;
+    const instant = !!opts.instant || this.reduceMotion;
     this.ocean.weather.applyPreset(key, { instant, time: false });
     this.ocean.setWaterType(p.water, instant, { fromPreset: true });
     if (p.timeOfDay !== undefined) {
@@ -399,7 +419,7 @@ class App {
         this.sky.timeOfDay = p.timeOfDay;
         this.timeLerp = null;
       } else {
-        this.setTime(p.timeOfDay);
+        this.setTime(p.timeOfDay, true);
       }
     }
     this.invalidateReady();
@@ -498,7 +518,8 @@ class App {
     return this.applyEnvironmentPreset(k);
   }
 
-  setTime(t) {
+  setTime(t, fromPreset = false) {
+    if (!fromPreset) this.ocean.weather.presetKey = null;
     this.timeLerp = { from: this.sky.timeOfDay, to: t, k: 0 };
   }
 
@@ -740,6 +761,13 @@ class App {
     this._hudTimer = 0;
     const o = this.ocean;
     const c = this.camera.camera.position;
+    const weather = o.weather.current;
+    const selected = o.weather.presetKey || "";
+    const select = document.getElementById("weatherSelect");
+    if (select.value !== selected) select.value = selected;
+    document.getElementById("hudWeather").textContent =
+      `${Math.round(weather.cloudCover * 100)}% cloud · ${Math.round(weather.rain * 100)}% rain` +
+      (weather.fog > 0.01 ? ` · Sea fog ${Math.round(weather.fog * 100)}%` : "");
     document.getElementById("hudFps").textContent = this.engine.getFps().toFixed(0);
     document.getElementById("hudMs").textContent =
       ` · ${(1000 / Math.max(this.engine.getFps(), 1)).toFixed(1)} ms/frame`;

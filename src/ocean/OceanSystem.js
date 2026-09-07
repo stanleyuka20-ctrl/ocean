@@ -196,17 +196,9 @@ export class OceanSystem {
       this.footprints.update(d, this.focus, [0, 0]);
     }
 
-    // rain lands on the water: a few impact rings per frame, scaled by rate
+    // Centimetre-scale rain impacts are evaluated in the surface shader.
+    // The coarse disturbance field is reserved for wakes and breaking waves.
     const rain = this.weather.rain;
-    if (rain > 0.02 && this.camera.globalPosition.y > this.seaLevel) {
-      const n = Math.round(rain * 6);
-      const c = this.camera.globalPosition;
-      for (let i = 0; i < n; i++) {
-        const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * 90;
-        this.foam.add({ position: [c.x + Math.cos(a) * r, 0, c.z + Math.sin(a) * r],
-                        radius: 1.2 + Math.random() * 1.5, strength: 0.10 + rain * 0.10 });
-      }
-    }
 
     const wh = this.buoyancy.getHeight(this.camera.globalPosition.x, this.camera.globalPosition.z);
     this.underwater.seaLevel = this.seaLevel;

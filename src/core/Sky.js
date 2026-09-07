@@ -25,8 +25,12 @@ export class Sky {
     this.cloudSharp = 0.45;
     this.cloudBright = 1.0;
     this.storm = 0.0;
+    this.rain = 0;
+    this.fog = 0;
+    this.gust = 1;
     this.flash = 0;
-    this.lightningEnabled = true;
+    this.lightningEnabled = false;
+    this.lightningDir = new (B().Vector3)(0.65, 0.22, 0.72).normalize();
     this._flashTimer = 4;
     this._flashSeq = 0;
     this.drift = [0, 0];
@@ -63,7 +67,8 @@ export class Sky {
         attributes: ["position"],
         uniforms: ["world", "viewProjection", "uCamPos", "uSunDir", "uSunColor",
           "uMoonDir", "uMoonColor", "uSunI", "uMoonI", "uTurbidity", "uCloudCover",
-          "uCloudSharp", "uCloudBright", "uStorm", "uFlash", "uTime", "uCloudDrift"],
+          "uCloudSharp", "uCloudBright", "uStorm", "uFlash", "uTime", "uCloudDrift",
+          "uWeather", "uLightningDir"],
         samplers: [],
       });
     mat.backFaceCulling = false;
@@ -138,6 +143,8 @@ export class Sky {
     if (this.storm > 0.35 && this.lightningEnabled) {
       this._flashTimer -= dt * (0.4 + this.storm * 2.6);
       if (this._flashTimer <= 0) {
+        const az = Math.random() * Math.PI * 2;
+        this.lightningDir.set(Math.cos(az), 0.12 + Math.random() * 0.25, Math.sin(az)).normalize();
         this._flashSeq = 0.55;
         this._flashTimer = 1.4 + Math.random() * 7.5 * (1.3 - this.storm);
       }
@@ -151,7 +158,9 @@ export class Sky {
     }
 
     // --- cloud drift -------------------------------------------------------
-    const ws = this.windSpeed * 1.35;
+    this.gust = 1 + this.storm * (0.20 * Math.sin(this.clock * 0.37)
+      + 0.12 * Math.sin(this.clock * 0.83 + 1.7));
+    const ws = this.windSpeed * 1.35 * this.gust;
     this.drift[0] -= this.windDir[0] * ws * dt;
     this.drift[1] -= this.windDir[1] * ws * dt;
 
@@ -165,7 +174,7 @@ export class Sky {
     this._expTarget = (0.62 / lum) * this.exposureBias;
     this._expTarget = Math.min(Math.max(this._expTarget, 0.15), 12);
     if (this.autoExposure) {
-      const k = 1 - Math.exp(-dt * 1.4);
+      const k = 1 - Math.exp(-dt * (this._expTarget < this.exposure ? 2.2 : 0.8));
       this.exposure += (this._expTarget - this.exposure) * k;
     }
   }
@@ -184,6 +193,10 @@ export class Sky {
     mat.setFloat("uCloudBright", this.cloudBright);
     mat.setFloat("uStorm", this.storm);
     mat.setFloat("uFlash", this.flash);
+    if (!this._weatherV) this._weatherV = new (B().Vector4)(0, 0, 0, 1);
+    this._weatherV.set(this.rain, this.fog, this.clock || 0, this.gust);
+    mat.setVector4("uWeather", this._weatherV);
+    mat.setVector3("uLightningDir", this.lightningDir);
     if (this._driftV) this._driftV.set(this.drift[0], this.drift[1]);
     else this._driftV = new (B().Vector2)(this.drift[0], this.drift[1]);
     mat.setVector2("uCloudDrift", this._driftV);

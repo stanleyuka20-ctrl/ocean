@@ -113,7 +113,7 @@ export class DebugPanel {
     c.id = this._id("check");
     l.htmlFor = c.id;
     const show = () => { c.checked = !!get(); };
-    c.onchange = () => set(c.checked);
+    c.onchange = () => { set(c.checked); show(); };
     row.appendChild(l); row.appendChild(c);
     parent.appendChild(row);
     this.rows.push(show);
@@ -235,6 +235,9 @@ export class DebugPanel {
         (v) => { o.sim.setParams({ spread: v }); o.buoyancy.onParamsChanged(); });
       this._slider(g, "Storm intensity", 0, 1, 0.01, () => w.target.storm, (v) => w.set("storm", v));
       this._slider(g, "Rain intensity", 0, 1, 0.01, () => w.target.rain, (v) => w.set("rain", v));
+      this._slider(g, "Sea fog", 0, 1, 0.01, () => w.target.fog, (v) => w.set("fog", v),
+        (v) => Math.round(v * 100) + "%");
+      this._note(g, "Weather changes clouds, rainfall, visibility, wind, and waves together. Sea fog forms a low layer above the water.");
       this._slider(g, "Preset transition", 0.05, 4, 0.01, () => w.speed, (v) => { w.speed = v; });
     }
 
@@ -282,7 +285,9 @@ export class DebugPanel {
     {
       const g = this._group("Sky & time", true);
       const sky = o.sky;
-      this._slider(g, "Time of day", 0, 24, 0.01, () => sky.timeOfDay, (v) => { sky.timeOfDay = v; },
+      this._slider(g, "Time of day", 0, 24, 0.01, () => sky.timeOfDay, (v) => {
+        sky.timeOfDay = v % 24; app.timeLerp = null; o.weather.presetKey = null;
+      },
         (v) => {
           const hh = Math.floor(v), mm = Math.floor((v - hh) * 60);
           return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;

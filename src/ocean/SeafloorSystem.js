@@ -48,7 +48,7 @@ export class SeafloorSystem {
           "uMaxCausticDepth", "uTime",
           "uSunDir", "uSunColor", "uMoonDir", "uMoonColor",
           "uSunI", "uMoonI", "uTurbidity", "uCloudCover", "uCloudSharp",
-          "uCloudBright", "uStorm", "uFlash", "uCloudDrift",
+          "uCloudBright", "uStorm", "uFlash", "uCloudDrift", "uWeather", "uLightningDir",
         ],
         samplers: ["uFootprint", "uDeriv1", "uDeriv2"],
         defines: ["#define LOGARITHMICDEPTH"],

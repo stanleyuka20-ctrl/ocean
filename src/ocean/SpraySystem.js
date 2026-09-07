@@ -77,7 +77,6 @@ export class SpraySystem {
       ? new BJ.GPUParticleSystem(name, { capacity: cap }, this.scene)
       : new BJ.ParticleSystem(name, cap, this.scene));
 
-    const soft = softSprite(this.scene, "sprayTex", 0.9);
     const mist = softSprite(this.scene, "mistTex", 0.35);
 
     // --- wind-driven spray haze -------------------------------------------
@@ -126,7 +125,7 @@ export class SpraySystem {
     this.mist = mistPs;
 
     // --- rain --------------------------------------------------------------
-    const rain = mk("rain", this.tier.rain);
+    const rain = mk("rain", Math.min(this.tier.rain, 1800));
     rain.particleTexture = streakSprite(this.scene);
     rain.emitter = new BJ.Vector3(0, 0, 0);
     // Tight box: rain only has to sell the near field.  A 110 m box with the
@@ -137,14 +136,14 @@ export class SpraySystem {
     rain.color1 = new BJ.Color4(0.78, 0.86, 0.95, 0.42);
     rain.color2 = new BJ.Color4(0.70, 0.80, 0.92, 0.26);
     rain.colorDead = new BJ.Color4(0.7, 0.8, 0.9, 0.1);
-    rain.minSize = 0.035; rain.maxSize = 0.075;
-    rain.minScaleY = 5; rain.maxScaleY = 11;
-    rain.minLifeTime = 1.1; rain.maxLifeTime = 1.7;
+    rain.minSize = 0.018; rain.maxSize = 0.045;
+    rain.minScaleY = 7; rain.maxScaleY = 16;
+    rain.minLifeTime = 1.6; rain.maxLifeTime = 2.8;
     rain.emitRate = 0;
     rain.blendMode = BJ.ParticleSystem.BLENDMODE_STANDARD;
     rain.isBillboardBased = true;
-    rain.gravity = new BJ.Vector3(0, -42, 0);
-    rain.minEmitPower = 6; rain.maxEmitPower = 12;
+    rain.gravity = new BJ.Vector3(0, 0, 0);
+    rain.minEmitPower = 0.85; rain.maxEmitPower = 1.15;
     rain.direction1 = new BJ.Vector3(0, -1, 0);
     rain.direction2 = new BJ.Vector3(0, -1, 0);
     rain.updateSpeed = 0.016;
@@ -229,7 +228,7 @@ export class SpraySystem {
     set(this.spray, 1.0, 1.0, 1.0, 0.16, 0.09);
     set(this.mist, 0.94, 0.97, 1.0, 0.030, 0.016);
     set(this.burst, 1.0, 1.0, 1.0, 0.62, 0.38);
-    set(this.rainPs, 0.80, 0.87, 0.96, 0.16, 0.09);
+    set(this.rainPs, 0.80, 0.87, 0.96, 0.24, 0.12);
   }
 
   /**
@@ -323,7 +322,7 @@ export class SpraySystem {
     // persistence floor and collapsed the whole matrix below it.  At
     // normal playback the two are equivalent; under __lockStep they are
     // not, and only this one is honest.
-    const gust = 1 + 0.35 * Math.sin((this.clock || 0) * 1.1);
+    const gust = sky ? sky.gust : 1;
     const wx = windDir[0] * wind * 0.55 * gust, wz = windDir[1] * wind * 0.55 * gust;
     this.spray.direction1 = new BJ.Vector3(wx * 0.6 - 1, 2.0, wz * 0.6 - 1);
     this.spray.direction2 = new BJ.Vector3(wx * 1.1 + 1, 5.5, wz * 1.1 + 1);
@@ -331,8 +330,10 @@ export class SpraySystem {
     this.mist.direction2 = new BJ.Vector3(wx * 0.6 + 0.5, 0.7, wz * 0.6 + 0.5);
     this.burst.direction1 = new BJ.Vector3(wx * 0.5 - 1.5, 2.5, wz * 0.5 - 1.5);
     this.burst.direction2 = new BJ.Vector3(wx * 1.0 + 1.5, 7.0, wz * 1.0 + 1.5);
-    this.rainPs.direction1 = new BJ.Vector3(windDir[0] * wind * 0.32, -1, windDir[1] * wind * 0.32);
-    this.rainPs.direction2 = this.rainPs.direction1;
+    this.rainPs.direction1.set(windDir[0] * wind * 0.45 * gust - 0.4, -8.5,
+      windDir[1] * wind * 0.45 * gust - 0.4);
+    this.rainPs.direction2.set(windDir[0] * wind * 0.45 * gust + 0.4, -7.2,
+      windDir[1] * wind * 0.45 * gust + 0.4);
 
     const under = cam.y < this.seaLevel - 0.2;
     // Whitecaps now place spray at the crests that are actually breaking
